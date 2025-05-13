@@ -1,0 +1,9 @@
+path: C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/3_yolo_dataset
+train: C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/3_yolo_dataset/images/train
+val: C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/3_yolo_dataset/images/val
+
+# Falls du eigene Klassen hast, ersetze sie hier
+names:
+  0: Chair
+  1: Human
+  2: DANGER

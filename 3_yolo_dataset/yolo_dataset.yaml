@@ -1,9 +1,0 @@
-path: C:/Users/miche/OneDrive - Flex/4.4_CAS Machine Intelligence/03_Deep_Learning/Leistungsnachweis/Dataset/3_yolo_dataset
-train: images/train
-val: images/val
-
-# Falls du eigene Klassen hast, ersetze sie hier
-names:
-  0: Chair
-  1: Human
-  2: DANGER
