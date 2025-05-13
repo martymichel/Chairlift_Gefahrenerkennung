@@ -88,28 +88,28 @@ class ClassConfigDialog(QDialog):
         
         # Table for class configuration
         self.table = QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(['Klassen-ID', 'Name', 'Farbe', 'Konfidenz', 'IoU'])
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(['Klassen-ID', 'Name', 'Farbe', 'Konfidenz'])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table)
         
+        # Note label
+        note_label = QLabel("Hinweis: Klassen werden automatisch aus dem YOLO-Modell geladen und können nicht hinzugefügt oder entfernt werden.")
+        note_label.setWordWrap(True)
+        note_label.setStyleSheet("color: #666;")
+        layout.addWidget(note_label)
+        
         # Buttons
         buttons_layout = QHBoxLayout()
-        self.btn_add = QPushButton("Klasse hinzufügen")
-        self.btn_remove = QPushButton("Klasse entfernen")
         self.btn_save = QPushButton("Speichern")
         self.btn_cancel = QPushButton("Abbrechen")
         
-        buttons_layout.addWidget(self.btn_add)
-        buttons_layout.addWidget(self.btn_remove)
         buttons_layout.addStretch()
         buttons_layout.addWidget(self.btn_save)
         buttons_layout.addWidget(self.btn_cancel)
         layout.addLayout(buttons_layout)
         
         # Connect signals
-        self.btn_add.clicked.connect(self.add_class)
-        self.btn_remove.clicked.connect(self.remove_class)
         self.btn_save.clicked.connect(self.accept)
         self.btn_cancel.clicked.connect(self.reject)
         
@@ -123,7 +123,9 @@ class ClassConfigDialog(QDialog):
             self.table.insertRow(row)
             
             # Class ID
-            self.table.setItem(row, 0, QTableWidgetItem(cls_id))
+            id_item = QTableWidgetItem(cls_id)
+            id_item.setFlags(id_item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # Make ID non-editable
+            self.table.setItem(row, 0, id_item)
             
             # Name
             self.table.setItem(row, 1, QTableWidgetItem(cfg.get('name', f"Class {cls_id}")))
@@ -147,13 +149,6 @@ class ClassConfigDialog(QDialog):
             conf_spin.setSingleStep(0.05)
             conf_spin.setValue(float(cfg.get('conf', 0.5)))
             self.table.setCellWidget(row, 3, conf_spin)
-            
-            # IoU
-            iou_spin = QDoubleSpinBox()
-            iou_spin.setRange(0.1, 1.0)
-            iou_spin.setSingleStep(0.05)
-            iou_spin.setValue(float(cfg.get('iou', 0.5)))
-            self.table.setCellWidget(row, 4, iou_spin)
     
     def find_closest_color(self, rgb_color):
         """Find the closest predefined color name for an RGB value"""
@@ -172,37 +167,6 @@ class ClassConfigDialog(QDialog):
                 
         return closest_name
     
-    def add_class(self):
-        # Find the next available class ID
-        existing_ids = [int(cls_id) for cls_id in self.class_config.keys() if cls_id.isdigit()]
-        next_id = str(max(existing_ids + [-1]) + 1)
-        
-        # Add new class to config
-        self.class_config[next_id] = {
-            'name': f"Klasse {next_id}",
-            'color': COLORS["Red"],  # Default to red
-            'conf': 0.5,
-            'iou': 0.5
-        }
-        
-        # Refresh table
-        self.load_classes()
-    
-    def remove_class(self):
-        selected_rows = self.table.selectedIndexes()
-        if not selected_rows:
-            return
-            
-        row = selected_rows[0].row()
-        cls_id = self.table.item(row, 0).text()
-        
-        # Remove class from config
-        if cls_id in self.class_config:
-            del self.class_config[cls_id]
-            
-        # Refresh table
-        self.load_classes()
-    
     def get_config(self):
         config = {}
         for row in range(self.table.rowCount()):
@@ -215,7 +179,10 @@ class ClassConfigDialog(QDialog):
             color = COLORS[color_name]
             
             conf = self.table.cellWidget(row, 3).value()
-            iou = self.table.cellWidget(row, 4).value()
+            
+            # Keep other existing settings like IoU
+            existing_cfg = self.class_config.get(cls_id, {})
+            iou = existing_cfg.get('iou', 0.5)
             
             config[cls_id] = {
                 'name': name,
@@ -303,6 +270,11 @@ class VideoPlayer(QWidget):
         self.progress.setValue(0)
         self.progress.setVisible(False)
         self.main_layout.addWidget(self.progress)
+        
+        # Settings toggle button in main area (will show when sidebar is hidden)
+        self.btn_toggle_settings_main = QPushButton("≫ Einstellungen einblenden")
+        self.btn_toggle_settings_main.setVisible(False)
+        self.main_layout.addWidget(self.btn_toggle_settings_main)
         
         # Sidebar for settings
         self.sidebar = QFrame()
@@ -434,6 +406,7 @@ class VideoPlayer(QWidget):
         
         # Settings toggle
         self.btn_toggle_settings.clicked.connect(self.toggle_settings)
+        self.btn_toggle_settings_main.clicked.connect(self.toggle_settings)
         
         # Configuration
         self.btn_save_config.clicked.connect(lambda: self.save_config(True))
@@ -464,6 +437,9 @@ class VideoPlayer(QWidget):
                         info_text = f"Modell: {model_name}"
                         self.lbl_model_info.setText(info_text)
                         
+                        # Extract classes from the model
+                        self.extract_model_classes()
+                        
                         # Hide progress when done
                         self.progress.setVisible(False)
                     except Exception as e:
@@ -477,7 +453,48 @@ class VideoPlayer(QWidget):
                 self.progress.setVisible(False)
                 QMessageBox.critical(self, "Fehler", f"Modell konnte nicht geladen werden: {str(e)}")
     
+    def extract_model_classes(self):
+        """Extract class information from the loaded YOLO model"""
+        if not self.model:
+            return
+        
+        # Get classes from model
+        class_names = self.model.names
+        
+        # Create/update class config
+        new_config = {}
+        
+        # Assign colors to the classes
+        color_list = list(COLORS.values())
+        
+        for cls_id, name in class_names.items():
+            # Convert to string key
+            cls_id_str = str(cls_id)
+            
+            # If we already have config for this class, preserve settings
+            if cls_id_str in self.class_config:
+                new_config[cls_id_str] = self.class_config[cls_id_str]
+                new_config[cls_id_str]['name'] = name  # Update name from model
+            else:
+                # Assign a color from our predefined list
+                color_idx = cls_id % len(color_list)
+                color = color_list[color_idx]
+                
+                new_config[cls_id_str] = {
+                    'name': name,
+                    'color': color,
+                    'conf': 0.5,
+                    'iou': 0.5
+                }
+        
+        self.class_config = new_config
+        self.update_alarm_classes()
+    
     def configure_classes(self):
+        if not self.model:
+            QMessageBox.warning(self, "Warnung", "Bitte wählen Sie zuerst ein YOLO-Modell aus.")
+            return
+            
         dialog = ClassConfigDialog(self.class_config, self)
         if dialog.exec():
             self.class_config = dialog.get_config()
@@ -553,8 +570,10 @@ class VideoPlayer(QWidget):
     def toggle_settings(self):
         if self.sidebar.isVisible():
             self.sidebar.hide()
+            self.btn_toggle_settings_main.setVisible(True)
         else:
             self.sidebar.show()
+            self.btn_toggle_settings_main.setVisible(False)
     
     def pulse_alarm(self):
         """Animation für den Alarmzustand"""
@@ -745,6 +764,9 @@ class VideoPlayer(QWidget):
                         model_name = os.path.basename(model_path)
                         info_text = f"Modell: {model_name}"
                         self.lbl_model_info.setText(info_text)
+                        
+                        # Extract classes from the model
+                        self.extract_model_classes()
                     except Exception as e:
                         QMessageBox.critical(self, "Fehler", f"Modell konnte nicht geladen werden: {str(e)}")
                 
@@ -758,8 +780,21 @@ class VideoPlayer(QWidget):
                 if 'color' in cfg and isinstance(cfg['color'], list):
                     cfg['color'] = tuple(cfg['color'])
             
-            self.class_config = class_config
-            self.update_alarm_classes()
+            # Only update class config if model hasn't been loaded yet
+            # This ensures model classes take precedence
+            if not self.model:
+                self.class_config = class_config
+                self.update_alarm_classes()
+            else:
+                # If model is loaded, only update settings like color and confidence
+                for cls_id, cfg in class_config.items():
+                    if cls_id in self.class_config:
+                        if 'color' in cfg:
+                            self.class_config[cls_id]['color'] = cfg['color']
+                        if 'conf' in cfg:
+                            self.class_config[cls_id]['conf'] = cfg['conf']
+                        if 'iou' in cfg:
+                            self.class_config[cls_id]['iou'] = cfg['iou']
             
             # Load display settings
             display = config.get('display', {})
