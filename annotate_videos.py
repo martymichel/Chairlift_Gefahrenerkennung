@@ -15,18 +15,18 @@ from PyQt6.QtGui import QPixmap, QImage, QColor, QIcon
 from PyQt6.QtCore import QTimer, Qt, QPropertyAnimation, QThread, pyqtSignal, QRunnable, QThreadPool, QObject
 from ultralytics import YOLO
 
-# Predefined colors for bounding boxes
+# Predefined colors for bounding boxes (in BGR format for OpenCV)
 COLORS = {
-    "Red": (255, 0, 0),
-    "Green": (0, 255, 0),
-    "Blue": (0, 0, 255),
-    "Yellow": (255, 255, 0),
-    "Cyan": (0, 255, 255),
-    "Magenta": (255, 0, 255),
-    "Orange": (255, 165, 0),
-    "Purple": (128, 0, 128),
-    "Brown": (165, 42, 42),
-    "Pink": (255, 192, 203)
+    "Red": (0, 0, 255),      # BGR order
+    "Green": (0, 255, 0),    # BGR order
+    "Blue": (255, 0, 0),     # BGR order
+    "Yellow": (0, 255, 255), # BGR order
+    "Cyan": (255, 255, 0),   # BGR order
+    "Magenta": (255, 0, 255),# BGR order
+    "Orange": (0, 165, 255), # BGR order
+    "Purple": (128, 0, 128), # BGR order
+    "Brown": (42, 42, 165),  # BGR order
+    "Pink": (203, 192, 255)  # BGR order
 }
 
 class WorkerSignals(QObject):
@@ -136,7 +136,7 @@ class ClassConfigDialog(QDialog):
                 color_combo.addItem(color_name)
             
             # Set current color
-            current_color = cfg.get('color', (255, 0, 0))
+            current_color = cfg.get('color', (0, 0, 255))  # Default red in BGR
             # Find closest color in our predefined colors
             closest_color = self.find_closest_color(current_color)
             color_combo.setCurrentText(closest_color)
@@ -150,9 +150,9 @@ class ClassConfigDialog(QDialog):
             conf_spin.setValue(float(cfg.get('conf', 0.5)))
             self.table.setCellWidget(row, 3, conf_spin)
     
-    def find_closest_color(self, rgb_color):
-        """Find the closest predefined color name for an RGB value"""
-        if not rgb_color:
+    def find_closest_color(self, bgr_color):
+        """Find the closest predefined color name for a BGR value"""
+        if not bgr_color:
             return "Red"  # Default
             
         min_distance = float('inf')
@@ -160,7 +160,7 @@ class ClassConfigDialog(QDialog):
         
         for name, color in COLORS.items():
             # Calculate Euclidean distance between colors
-            distance = sum((a - b) ** 2 for a, b in zip(rgb_color, color))
+            distance = sum((a - b) ** 2 for a, b in zip(bgr_color, color))
             if distance < min_distance:
                 min_distance = distance
                 closest_name = name
@@ -736,9 +736,9 @@ class VideoPlayer(QWidget):
                 # Initialize with default config if no file selected
                 if not self.class_config:
                     self.class_config = {
-                        "0": {"name": "GEFAHR", "color": COLORS["Red"], "conf": 0.5, "iou": 0.6},
-                        "1": {"name": "Chair", "color": COLORS["Green"], "conf": 0.6, "iou": 0.3},
-                        "2": {"name": "Human", "color": COLORS["Blue"], "conf": 0.6, "iou": 0.2}
+                        "0": {"name": "GEFAHR", "color": COLORS["Red"], "conf": 0.5, "iou": 0.4},
+                        "1": {"name": "Chair", "color": COLORS["Green"], "conf": 0.6, "iou": 0.4},
+                        "2": {"name": "Human", "color": COLORS["Blue"], "conf": 0.6, "iou": 0.4}
                     }
                     self.update_alarm_classes()
                 return
