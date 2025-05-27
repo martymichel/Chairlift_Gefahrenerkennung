@@ -1,5 +1,5 @@
 {
-  "model_path": "C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/Training3/weights/last.pt",
+  "model_path": "C:/Users/miche/Documents/GitHub/Chairlift_Gefahrenerkennung/Training3/weights/best.pt",
   "class_config": {
     "0": {
       "name": "DANGER",
@@ -36,6 +36,6 @@
     "box_thickness": 2,
     "font_scale": 4,
     "text_thickness": 1,
-    "playback_speed": 16
+    "playback_speed": 14
   }
 }
