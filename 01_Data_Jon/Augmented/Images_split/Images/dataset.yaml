@@ -1,0 +1,8 @@
+train: C:\Users\jonni\OneDrive\Dokumente\GitHub\Chairlift_Gefahrenerkennung\01_Data_Jon\Augmented\Images_split\Images\train\images
+val: C:\Users\jonni\OneDrive\Dokumente\GitHub\Chairlift_Gefahrenerkennung\01_Data_Jon\Augmented\Images_split\Images\val\images
+test: C:\Users\jonni\OneDrive\Dokumente\GitHub\Chairlift_Gefahrenerkennung\01_Data_Jon\Augmented\Images_split\Images\test\images
+nc: 3
+names:
+- KLEBER
+- EDDING
+- TACKER
