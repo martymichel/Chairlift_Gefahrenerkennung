@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QFileDialog, QSlider, QGroupBox, QFormLayout, QSpinBox, QComboBox,
     QSplitter, QFrame, QTabWidget, QLineEdit, QColorDialog, QDoubleSpinBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QProgressBar,
-    QDialog, QGridLayout, QListWidget, QListWidgetItem
+    QDialog, QGridLayout, QListWidget, QListWidgetItem, QCheckBox
 )
 from PyQt6.QtGui import QPixmap, QImage, QColor, QIcon
 from PyQt6.QtCore import QTimer, Qt, QPropertyAnimation, QThread, pyqtSignal, QRunnable, QThreadPool, QObject
@@ -39,6 +39,14 @@ COLORS = {
     "Violet": (238, 130, 238),
 }
 
+# Standard Pose-Verbindungen für YOLO Pose (17 Keypoints)
+POSE_CONNECTIONS = [
+    (0, 1), (0, 2), (1, 3), (2, 4),  # Kopf
+    (5, 6), (5, 7), (7, 9), (6, 8), (8, 10),  # Arme
+    (5, 11), (6, 12), (11, 12),  # Torso
+    (11, 13), (13, 15), (12, 14), (14, 16)  # Beine
+]
+
 class WorkerSignals(QObject):
     """Defines the signals available from the worker thread."""
     result = pyqtSignal(object)
@@ -46,41 +54,98 @@ class WorkerSignals(QObject):
     error = pyqtSignal(str)
     progress = pyqtSignal(int)
 
-class DetectionWorker(QRunnable):
-    """Worker thread for processing video frames in parallel."""
-    def __init__(self, frame, model, class_config):
+class DualDetectionWorker(QRunnable):
+    """Worker thread for processing video frames with detection first, then pose on detected objects."""
+    def __init__(self, frame, detection_model, pose_model, class_config, pose_config):
         super().__init__()
         self.frame = frame.copy()
-        self.model = model
+        self.detection_model = detection_model
+        self.pose_model = pose_model
         self.class_config = class_config
+        self.pose_config = pose_config
         self.signals = WorkerSignals()
         
     def run(self):
         try:
-            # Process frame with YOLO
-            results = self.model.predict(self.frame, verbose=False)[0]
-            
-            # Format the results for rendering
             detections = []
-            for box in results.boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                conf = float(box.conf[0])
-                cls = int(box.cls[0])
+            poses = []
+            
+            # Step 1: Object Detection
+            if self.detection_model:
+                det_results = self.detection_model.predict(self.frame, verbose=False)[0]
                 
-                cls_id = str(cls)
-                cfg = self.class_config.get(cls_id)
-                if not cfg or conf < float(cfg.get("conf", 0.5)):
-                    continue
+                pose_detect_class = self.pose_config.get('pose_detect_class')
                 
-                detections.append({
-                    'box': {'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2},
-                    'conf': conf,
-                    'class_id': cls,
-                    'class_name': cfg.get('name', f"Class {cls}")
-                })
+                for box in det_results.boxes:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    conf = float(box.conf[0])
+                    cls = int(box.cls[0])
+                    
+                    cls_id = str(cls)
+                    cfg = self.class_config.get(cls_id)
+                    if not cfg or conf < float(cfg.get("conf", 0.5)):
+                        continue
+                    
+                    detection = {
+                        'box': {'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2},
+                        'conf': conf,
+                        'class_id': cls,
+                        'class_name': cfg.get('name', f"Class {cls}")
+                    }
+                    detections.append(detection)
+                    
+                    # Step 2: Pose Detection auf ausgeschnittenen Bereichen
+                    if (self.pose_model and pose_detect_class and 
+                        cls_id == pose_detect_class):
+                        
+                        # Bounding Box erweitern und beschränken
+                        h, w = self.frame.shape[:2]
+                        margin = 20  # Pixel Spielraum um die Box
+                        x1_exp = max(0, x1 - margin)
+                        y1_exp = max(0, y1 - margin)
+                        x2_exp = min(w, x2 + margin)
+                        y2_exp = min(h, y2 + margin)
+                        
+                        # Ausschnitt extrahieren
+                        roi = self.frame[y1_exp:y2_exp, x1_exp:x2_exp]
+                        
+                        if roi.shape[0] > 0 and roi.shape[1] > 0:
+                            # Pose Detection auf ROI
+                            pose_results = self.pose_model.predict(roi, verbose=False)[0]
+                            
+                            if hasattr(pose_results, 'keypoints') and pose_results.keypoints is not None:
+                                for person_idx, keypoints in enumerate(pose_results.keypoints.xy):
+                                    if pose_results.keypoints.conf is not None:
+                                        confs = pose_results.keypoints.conf[person_idx]
+                                    else:
+                                        confs = [1.0] * len(keypoints)
+                                    
+                                    # Filter keypoints by confidence
+                                    min_conf = self.pose_config.get('min_confidence', 0.3)
+                                    valid_keypoints = []
+                                    
+                                    for i, (kp, conf_kp) in enumerate(zip(keypoints, confs)):
+                                        if conf_kp >= min_conf and kp[0] > 0 and kp[1] > 0:
+                                            # Koordinaten zurück ins Vollbild transformieren
+                                            global_x = float(kp[0]) + x1_exp
+                                            global_y = float(kp[1]) + y1_exp
+                                            
+                                            valid_keypoints.append({
+                                                'id': i,
+                                                'x': global_x,
+                                                'y': global_y,
+                                                'conf': float(conf_kp)
+                                            })
+                                    
+                                    if valid_keypoints:  # Nur hinzufügen wenn gültige Keypoints
+                                        poses.append({
+                                            'person_id': f"{cls_id}_{person_idx}",
+                                            'detection_box': detection['box'],
+                                            'keypoints': valid_keypoints
+                                        })
             
             # Emit the result
-            self.signals.result.emit((self.frame, detections))
+            self.signals.result.emit((self.frame, detections, poses))
         except Exception as e:
             self.signals.error.emit(str(e))
         finally:
@@ -88,13 +153,15 @@ class DetectionWorker(QRunnable):
 
 class SettingsDialog(QDialog):
     """Großer übersichtlicher Dialog für alle Einstellungen."""
-    def __init__(self, model_path, class_config, display_config, video_files, parent=None):
+    def __init__(self, detection_model_path, pose_model_path, class_config, pose_config, display_config, video_files, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Einstellungen")
-        self.resize(1000, 700)
+        self.resize(1200, 800)
         
-        self.model_path = model_path
+        self.detection_model_path = detection_model_path
+        self.pose_model_path = pose_model_path
         self.class_config = class_config.copy()
+        self.pose_config = pose_config.copy()
         self.display_config = display_config.copy()
         self.video_files = video_files.copy()
         
@@ -104,26 +171,43 @@ class SettingsDialog(QDialog):
     def setup_ui(self):
         main_layout = QHBoxLayout(self)
         
-        # Linke Seite: Modell und Videos
+        # Linke Seite: Modelle und Videos
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
         
-        # Modell-Auswahl
-        model_group = QGroupBox("YOLO Modell")
-        model_layout = QVBoxLayout(model_group)
+        # Detection Modell-Auswahl
+        detection_model_group = QGroupBox("YOLO Detection Modell")
+        detection_model_layout = QVBoxLayout(detection_model_group)
         
-        model_select_layout = QHBoxLayout()
-        self.txt_model_path = QLineEdit(self.model_path)
-        self.txt_model_path.setReadOnly(True)
-        self.btn_select_model = QPushButton("Modell auswählen")
-        model_select_layout.addWidget(self.txt_model_path, 3)
-        model_select_layout.addWidget(self.btn_select_model, 1)
-        model_layout.addLayout(model_select_layout)
+        detection_model_select_layout = QHBoxLayout()
+        self.txt_detection_model_path = QLineEdit(self.detection_model_path)
+        self.txt_detection_model_path.setReadOnly(True)
+        self.btn_select_detection_model = QPushButton("Detection Modell auswählen")
+        detection_model_select_layout.addWidget(self.txt_detection_model_path, 3)
+        detection_model_select_layout.addWidget(self.btn_select_detection_model, 1)
+        detection_model_layout.addLayout(detection_model_select_layout)
         
-        self.lbl_model_info = QLabel("Kein Modell geladen")
-        model_layout.addWidget(self.lbl_model_info)
+        self.lbl_detection_model_info = QLabel("Kein Detection Modell geladen")
+        detection_model_layout.addWidget(self.lbl_detection_model_info)
         
-        left_layout.addWidget(model_group)
+        left_layout.addWidget(detection_model_group)
+        
+        # Pose Modell-Auswahl
+        pose_model_group = QGroupBox("YOLO Pose Modell")
+        pose_model_layout = QVBoxLayout(pose_model_group)
+        
+        pose_model_select_layout = QHBoxLayout()
+        self.txt_pose_model_path = QLineEdit(self.pose_model_path)
+        self.txt_pose_model_path.setReadOnly(True)
+        self.btn_select_pose_model = QPushButton("Pose Modell auswählen")
+        pose_model_select_layout.addWidget(self.txt_pose_model_path, 3)
+        pose_model_select_layout.addWidget(self.btn_select_pose_model, 1)
+        pose_model_layout.addLayout(pose_model_select_layout)
+        
+        self.lbl_pose_model_info = QLabel("Kein Pose Modell geladen")
+        pose_model_layout.addWidget(self.lbl_pose_model_info)
+        
+        left_layout.addWidget(pose_model_group)
         
         # Video-Auswahl
         video_group = QGroupBox("Videos (Endlosschleife)")
@@ -178,13 +262,46 @@ class SettingsDialog(QDialog):
         display_form.addRow("Alarmklasse:", self.alarm_class_dropdown)
         
         left_layout.addWidget(display_group)
+        
+        # Pose-Einstellungen
+        pose_settings_group = QGroupBox("Pose-Einstellungen")
+        pose_form = QFormLayout(pose_settings_group)
+        
+        self.pose_detect_class_dropdown = QComboBox()
+        pose_form.addRow("Pose Detect Klasse:", self.pose_detect_class_dropdown)
+        
+        self.pose_min_confidence = QDoubleSpinBox()
+        self.pose_min_confidence.setRange(0.1, 1.0)
+        self.pose_min_confidence.setSingleStep(0.05)
+        self.pose_min_confidence.setValue(self.pose_config.get('min_confidence', 0.3))
+        pose_form.addRow("Min. Pose Konfidenz:", self.pose_min_confidence)
+        
+        self.pose_line_thickness = QSpinBox()
+        self.pose_line_thickness.setRange(1, 10)
+        self.pose_line_thickness.setValue(self.pose_config.get('line_thickness', 2))
+        pose_form.addRow("Skelett-Liniendicke:", self.pose_line_thickness)
+        
+        self.pose_keypoint_radius = QSpinBox()
+        self.pose_keypoint_radius.setRange(1, 20)
+        self.pose_keypoint_radius.setValue(self.pose_config.get('keypoint_radius', 3))
+        pose_form.addRow("Keypoint-Radius:", self.pose_keypoint_radius)
+        
+        self.pose_show_keypoints = QCheckBox()
+        self.pose_show_keypoints.setChecked(self.pose_config.get('show_keypoints', True))
+        pose_form.addRow("Keypoints anzeigen:", self.pose_show_keypoints)
+        
+        self.pose_show_skeleton = QCheckBox()
+        self.pose_show_skeleton.setChecked(self.pose_config.get('show_skeleton', True))
+        pose_form.addRow("Skelett anzeigen:", self.pose_show_skeleton)
+        
+        left_layout.addWidget(pose_settings_group)
         left_layout.addStretch()
         
         # Rechte Seite: Klasseneinstellungen
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
         
-        classes_group = QGroupBox("Klasseneinstellungen")
+        classes_group = QGroupBox("Detection Klasseneinstellungen")
         classes_layout = QVBoxLayout(classes_group)
         
         # Tabelle für Klasseneinstellungen
@@ -194,7 +311,7 @@ class SettingsDialog(QDialog):
         self.class_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         classes_layout.addWidget(self.class_table)
         
-        note_label = QLabel("Hinweis: Klassen werden automatisch aus dem YOLO-Modell geladen.")
+        note_label = QLabel("Hinweis: Klassen werden automatisch aus dem YOLO-Detection-Modell geladen.")
         note_label.setWordWrap(True)
         note_label.setStyleSheet("color: #666; font-style: italic;")
         classes_layout.addWidget(note_label)
@@ -230,7 +347,8 @@ class SettingsDialog(QDialog):
         self.connect_signals()
     
     def connect_signals(self):
-        self.btn_select_model.clicked.connect(self.select_model)
+        self.btn_select_detection_model.clicked.connect(self.select_detection_model)
+        self.btn_select_pose_model.clicked.connect(self.select_pose_model)
         self.btn_add_videos.clicked.connect(self.add_videos)
         self.btn_remove_video.clicked.connect(self.remove_video)
         self.btn_clear_videos.clicked.connect(self.clear_videos)
@@ -241,27 +359,43 @@ class SettingsDialog(QDialog):
         self.btn_load_config.clicked.connect(self.load_config)
         self.btn_save_config.clicked.connect(self.save_config)
     
-    def select_model(self):
+    def select_detection_model(self):
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "YOLO-Modell auswählen", "", "YOLO Models (*.pt)"
+            self, "YOLO-Detection-Modell auswählen", "", "YOLO Models (*.pt)"
         )
         if file_path:
             try:
                 model = YOLO(file_path)
-                self.model_path = file_path
-                self.txt_model_path.setText(file_path)
+                self.detection_model_path = file_path
+                self.txt_detection_model_path.setText(file_path)
                 
                 model_name = os.path.basename(file_path)
-                self.lbl_model_info.setText(f"Modell: {model_name}")
+                self.lbl_detection_model_info.setText(f"Detection Modell: {model_name}")
                 
                 # Klassen aus Modell extrahieren
                 self.extract_model_classes(model)
                 
             except Exception as e:
-                QMessageBox.critical(self, "Fehler", f"Modell konnte nicht geladen werden: {str(e)}")
+                QMessageBox.critical(self, "Fehler", f"Detection Modell konnte nicht geladen werden: {str(e)}")
+    
+    def select_pose_model(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "YOLO-Pose-Modell auswählen", "", "YOLO Models (*.pt)"
+        )
+        if file_path:
+            try:
+                model = YOLO(file_path)
+                self.pose_model_path = file_path
+                self.txt_pose_model_path.setText(file_path)
+                
+                model_name = os.path.basename(file_path)
+                self.lbl_pose_model_info.setText(f"Pose Modell: {model_name}")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Fehler", f"Pose Modell konnte nicht geladen werden: {str(e)}")
     
     def extract_model_classes(self, model):
-        """Extract class information from the loaded YOLO model"""
+        """Extract class information from the loaded YOLO detection model"""
         class_names = model.names
         
         # Bestehende Konfiguration beibehalten, neue Klassen hinzufügen
@@ -286,6 +420,7 @@ class SettingsDialog(QDialog):
         
         self.load_class_table()
         self.update_alarm_classes()
+        self.update_pose_detect_classes()
     
     def load_class_table(self):
         self.class_table.setRowCount(0)
@@ -365,14 +500,38 @@ class SettingsDialog(QDialog):
     def update_alarm_classes(self):
         current_data = self.alarm_class_dropdown.currentData()
         self.alarm_class_dropdown.clear()
+        self.alarm_class_dropdown.addItem("Keine Alarmklasse", userData=None)
         
         for cls_id, cfg in self.class_config.items():
             self.alarm_class_dropdown.addItem(f"{cls_id}: {cfg['name']}", userData=cls_id)
         
-        if current_data:
+        # Setze die gespeicherte Auswahl zurück
+        if current_data is not None:
             index = self.alarm_class_dropdown.findData(current_data)
             if index >= 0:
                 self.alarm_class_dropdown.setCurrentIndex(index)
+        elif self.display_config.get('alarm_class') is not None:
+            index = self.alarm_class_dropdown.findData(self.display_config.get('alarm_class'))
+            if index >= 0:
+                self.alarm_class_dropdown.setCurrentIndex(index)
+    
+    def update_pose_detect_classes(self):
+        current_data = self.pose_detect_class_dropdown.currentData()
+        self.pose_detect_class_dropdown.clear()
+        self.pose_detect_class_dropdown.addItem("Keine Pose Detection", userData=None)
+        
+        for cls_id, cfg in self.class_config.items():
+            self.pose_detect_class_dropdown.addItem(f"{cls_id}: {cfg['name']}", userData=cls_id)
+        
+        # Setze die gespeicherte Auswahl zurück
+        if current_data is not None:
+            index = self.pose_detect_class_dropdown.findData(current_data)
+            if index >= 0:
+                self.pose_detect_class_dropdown.setCurrentIndex(index)
+        elif self.pose_config.get('pose_detect_class') is not None:
+            index = self.pose_detect_class_dropdown.findData(self.pose_config.get('pose_detect_class'))
+            if index >= 0:
+                self.pose_detect_class_dropdown.setCurrentIndex(index)
     
     def load_settings(self):
         # Videos laden
@@ -384,14 +543,20 @@ class SettingsDialog(QDialog):
         # Klassen laden
         self.load_class_table()
         self.update_alarm_classes()
+        self.update_pose_detect_classes()
         
         # Modell-Info aktualisieren
-        if self.model_path:
-            model_name = os.path.basename(self.model_path)
-            self.lbl_model_info.setText(f"Modell: {model_name}")
+        if self.detection_model_path:
+            model_name = os.path.basename(self.detection_model_path)
+            self.lbl_detection_model_info.setText(f"Detection Modell: {model_name}")
+            
+        if self.pose_model_path:
+            model_name = os.path.basename(self.pose_model_path)
+            self.lbl_pose_model_info.setText(f"Pose Modell: {model_name}")
     
     def get_settings(self):
-        # Klasseneinstellungen aus Tabelle sammeln
+        # WICHTIG: Klasseneinstellungen aus Tabelle sammeln VOR dem Speichern
+        updated_class_config = {}
         for row in range(self.class_table.rowCount()):
             cls_id = self.class_table.item(row, 0).text()
             name = self.class_table.item(row, 1).text()
@@ -403,7 +568,7 @@ class SettingsDialog(QDialog):
             conf = self.class_table.cellWidget(row, 3).value()
             iou = self.class_table.cellWidget(row, 4).value()
             
-            self.class_config[cls_id] = {
+            updated_class_config[cls_id] = {
                 'name': name,
                 'color': color,
                 'conf': conf,
@@ -411,7 +576,7 @@ class SettingsDialog(QDialog):
             }
         
         # Display-Einstellungen sammeln
-        self.display_config = {
+        display_config = {
             'box_thickness': self.box_thickness.value(),
             'font_scale': self.font_scale.value(),
             'text_thickness': self.text_thickness.value(),
@@ -419,75 +584,163 @@ class SettingsDialog(QDialog):
             'alarm_class': self.alarm_class_dropdown.currentData()
         }
         
+        # Pose-Einstellungen sammeln
+        pose_config = {
+            'pose_detect_class': self.pose_detect_class_dropdown.currentData(),
+            'min_confidence': self.pose_min_confidence.value(),
+            'line_thickness': self.pose_line_thickness.value(),
+            'keypoint_radius': self.pose_keypoint_radius.value(),
+            'show_keypoints': self.pose_show_keypoints.isChecked(),
+            'show_skeleton': self.pose_show_skeleton.isChecked()
+        }
+        
         return {
-            'model_path': self.model_path,
-            'class_config': self.class_config,
-            'display_config': self.display_config,
+            'detection_model_path': self.detection_model_path,
+            'pose_model_path': self.pose_model_path,
+            'class_config': updated_class_config,
+            'pose_config': pose_config,
+            'display_config': display_config,
             'video_files': self.video_files
         }
     
     def save_config(self):
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Konfiguration speichern", "", "JSON (*.json)"
-        )
-        if file_path:
-            try:
-                config = self.get_settings()
-                with open(file_path, 'w') as f:
-                    json.dump(config, f, indent=2)
-                QMessageBox.information(self, "Erfolg", "Konfiguration wurde gespeichert.")
-            except Exception as e:
-                QMessageBox.critical(self, "Fehler", f"Fehler beim Speichern: {str(e)}")
+        # Immer in die aktuelle config.json speichern
+        config_path = self.find_or_create_config_file()
+        try:
+            config = self.get_settings()
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+            QMessageBox.information(self, "Erfolg", f"Konfiguration wurde in {config_path} gespeichert.")
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Speichern: {str(e)}")
     
     def load_config(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Konfiguration laden", "", "JSON (*.json)"
         )
         if file_path:
-            try:
-                with open(file_path, 'r') as f:
-                    config = json.load(f)
-                
-                # Konfiguration laden
-                self.model_path = config.get('model_path', '')
-                self.class_config = config.get('class_config', {})
-                self.display_config = config.get('display_config', {})
-                self.video_files = config.get('video_files', [])
-                
-                # Farben konvertieren
-                for cls_id, cfg in self.class_config.items():
-                    if 'color' in cfg and isinstance(cfg['color'], list):
-                        cfg['color'] = tuple(cfg['color'])
-                
-                # UI aktualisieren
-                self.txt_model_path.setText(self.model_path)
-                if self.model_path:
-                    model_name = os.path.basename(self.model_path)
-                    self.lbl_model_info.setText(f"Modell: {model_name}")
-                
-                self.box_thickness.setValue(self.display_config.get('box_thickness', 2))
-                self.font_scale.setValue(self.display_config.get('font_scale', 5))
-                self.text_thickness.setValue(self.display_config.get('text_thickness', 1))
-                self.speed_slider.setValue(self.display_config.get('playback_speed', 30))
-                
-                # Videos neu laden
-                self.video_list.clear()
-                for video_file in self.video_files:
+            self._load_config_from_file(file_path)
+    
+    def _load_config_from_file(self, file_path):
+        """Lädt Konfiguration aus der angegebenen Datei"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            # Konfiguration laden mit Fallback-Werten
+            self.detection_model_path = config.get('detection_model_path', config.get('model_path', ''))
+            self.pose_model_path = config.get('pose_model_path', '')
+            self.class_config = config.get('class_config', {})
+            self.pose_config = config.get('pose_config', {
+                'pose_detect_class': None,
+                'min_confidence': 0.3,
+                'line_thickness': 2,
+                'keypoint_radius': 3,
+                'show_keypoints': True,
+                'show_skeleton': True
+            })
+            
+            # Display config aus alter Struktur migrieren
+            display = config.get('display_config', config.get('display', {}))
+            self.display_config = {
+                'box_thickness': display.get('box_thickness', 2),
+                'font_scale': display.get('font_scale', 5),
+                'text_thickness': display.get('text_thickness', 1),
+                'playback_speed': display.get('playback_speed', 30),
+                'alarm_class': display.get('alarm_class', None)
+            }
+            
+            self.video_files = config.get('video_files', [])
+            
+            # Farben konvertieren
+            for cls_id, cfg in self.class_config.items():
+                if 'color' in cfg and isinstance(cfg['color'], list):
+                    cfg['color'] = tuple(cfg['color'])
+            
+            # UI aktualisieren
+            self.txt_detection_model_path.setText(self.detection_model_path)
+            self.txt_pose_model_path.setText(self.pose_model_path)
+            
+            if self.detection_model_path:
+                model_name = os.path.basename(self.detection_model_path)
+                self.lbl_detection_model_info.setText(f"Detection Modell: {model_name}")
+            
+            if self.pose_model_path:
+                model_name = os.path.basename(self.pose_model_path)
+                self.lbl_pose_model_info.setText(f"Pose Modell: {model_name}")
+            
+            # Display-Einstellungen
+            self.box_thickness.setValue(self.display_config.get('box_thickness', 2))
+            self.font_scale.setValue(self.display_config.get('font_scale', 5))
+            self.text_thickness.setValue(self.display_config.get('text_thickness', 1))
+            self.speed_slider.setValue(self.display_config.get('playback_speed', 30))
+            
+            # Pose-Einstellungen
+            self.pose_min_confidence.setValue(self.pose_config.get('min_confidence', 0.3))
+            self.pose_line_thickness.setValue(self.pose_config.get('line_thickness', 2))
+            self.pose_keypoint_radius.setValue(self.pose_config.get('keypoint_radius', 3))
+            self.pose_show_keypoints.setChecked(self.pose_config.get('show_keypoints', True))
+            self.pose_show_skeleton.setChecked(self.pose_config.get('show_skeleton', True))
+            
+            # Videos neu laden
+            self.video_list.clear()
+            for video_file in self.video_files:
+                if os.path.exists(video_file):  # Nur existierende Dateien
                     item = QListWidgetItem(os.path.basename(video_file))
                     item.setToolTip(video_file)
                     self.video_list.addItem(item)
-                
-                self.load_class_table()
-                self.update_alarm_classes()
-                
-                QMessageBox.information(self, "Erfolg", "Konfiguration wurde geladen.")
+                else:
+                    # Entferne nicht existierende Videos aus der Liste
+                    self.video_files.remove(video_file)
+            
+            self.load_class_table()
+            self.update_alarm_classes()
+            self.update_pose_detect_classes()
+            
+            QMessageBox.information(self, "Erfolg", f"Konfiguration wurde aus {file_path} geladen.")
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Laden: {str(e)}")
+    
+    def find_or_create_config_file(self):
+        """Findet oder erstellt eine config.json Datei im App-Verzeichnis"""
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(app_dir, "config.json")
+        
+        # Wenn keine config.json existiert, erstelle eine
+        if not os.path.exists(config_path):
+            default_config = {
+                'detection_model_path': '',
+                'pose_model_path': '',
+                'class_config': {},
+                'pose_config': {
+                    'pose_detect_class': None,
+                    'min_confidence': 0.3,
+                    'line_thickness': 2,
+                    'keypoint_radius': 3,
+                    'show_keypoints': True,
+                    'show_skeleton': True
+                },
+                'display_config': {
+                    'box_thickness': 2,
+                    'font_scale': 5,
+                    'text_thickness': 1,
+                    'playback_speed': 30,
+                    'alarm_class': None
+                },
+                'video_files': []
+            }
+            try:
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(default_config, f, indent=2)
             except Exception as e:
-                QMessageBox.critical(self, "Fehler", f"Fehler beim Laden: {str(e)}")
+                print(f"Konnte config.json nicht erstellen: {e}")
+        
+        return config_path
 
 class VideoPlayer(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("YOLO Video Annotator")
+        self.setWindowTitle("YOLO Dual Model Video Annotator")
         
         # Vollbild-Modus aktivieren
         self.showMaximized()
@@ -497,9 +750,19 @@ class VideoPlayer(QWidget):
         self.threadpool.setMaxThreadCount(4)
         
         # Initial default values
-        self.model = None
-        self.model_path = ""
+        self.detection_model = None
+        self.pose_model = None
+        self.detection_model_path = ""
+        self.pose_model_path = ""
         self.class_config = {}
+        self.pose_config = {
+            'pose_detect_class': None,
+            'min_confidence': 0.3,
+            'line_thickness': 2,
+            'keypoint_radius': 3,
+            'show_keypoints': True,
+            'show_skeleton': True
+        }
         self.display_config = {
             'box_thickness': 2,
             'font_scale': 5,
@@ -519,6 +782,7 @@ class VideoPlayer(QWidget):
         self.current_frame = None
         self.processing_frame = False
         self.last_detections = []
+        self.last_poses = []
         
         # Status
         self.alarm_active = False
@@ -563,7 +827,7 @@ class VideoPlayer(QWidget):
         self.video_container.setStyleSheet("background-color: #222; border-radius: 5px;")
         video_layout = QVBoxLayout(self.video_container)
         
-        self.label = QLabel("Bitte wählen Sie Videos und ein YOLO-Modell in den Einstellungen aus")
+        self.label = QLabel("Bitte wählen Sie Videos und YOLO-Modelle in den Einstellungen aus")
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label.setStyleSheet("color: #aaa; font-size: 16px;")
         video_layout.addWidget(self.label)
@@ -585,8 +849,10 @@ class VideoPlayer(QWidget):
     
     def open_settings(self):
         dialog = SettingsDialog(
-            self.model_path, 
-            self.class_config, 
+            self.detection_model_path,
+            self.pose_model_path,
+            self.class_config,
+            self.pose_config,
             self.display_config,
             self.video_files,
             self
@@ -595,35 +861,71 @@ class VideoPlayer(QWidget):
         if dialog.exec():
             settings = dialog.get_settings()
             
-            self.model_path = settings['model_path']
-            self.class_config = settings['class_config']
+            # WICHTIG: Alle Einstellungen übernehmen
+            self.detection_model_path = settings['detection_model_path']
+            self.pose_model_path = settings['pose_model_path']
+            self.class_config = settings['class_config']  # Übernehme aktualisierte Klassen
+            self.pose_config = settings['pose_config']
             self.display_config = settings['display_config']
             self.video_files = settings['video_files']
             
-            # Modell neu laden falls geändert
-            if self.model_path:
+            # Detection Modell neu laden falls geändert
+            if self.detection_model_path:
                 try:
-                    self.model = YOLO(self.model_path)
-                    model_name = os.path.basename(self.model_path)
-                    self.lbl_status.setText(f"Modell geladen: {model_name}")
+                    self.detection_model = YOLO(self.detection_model_path)
+                    detection_model_name = os.path.basename(self.detection_model_path)
+                    print(f"Detection Modell geladen: {detection_model_name}")
                 except Exception as e:
-                    QMessageBox.critical(self, "Fehler", f"Modell konnte nicht geladen werden: {str(e)}")
-                    return
+                    QMessageBox.critical(self, "Fehler", f"Detection Modell konnte nicht geladen werden: {str(e)}")
+                    self.detection_model = None
+            else:
+                self.detection_model = None
+            
+            # Pose Modell neu laden falls geändert
+            if self.pose_model_path:
+                try:
+                    self.pose_model = YOLO(self.pose_model_path)
+                    pose_model_name = os.path.basename(self.pose_model_path)
+                    print(f"Pose Modell geladen: {pose_model_name}")
+                except Exception as e:
+                    QMessageBox.critical(self, "Fehler", f"Pose Modell konnte nicht geladen werden: {str(e)}")
+                    self.pose_model = None
+            else:
+                self.pose_model = None
+            
+            # Status aktualisieren
+            status_parts = []
+            if self.detection_model:
+                status_parts.append(f"Detection: {os.path.basename(self.detection_model_path)}")
+            if self.pose_model:
+                status_parts.append(f"Pose: {os.path.basename(self.pose_model_path)}")
+            
+            if status_parts:
+                self.lbl_status.setText(" | ".join(status_parts))
+            else:
+                self.lbl_status.setText("Keine Modelle geladen")
             
             # Videos vorbereiten
-            if self.video_files:
+            if self.video_files and (self.detection_model or self.pose_model):
                 self.current_video_idx = 0
                 self.btn_play_pause.setEnabled(True)
                 self.label.setText("Bereit zum Abspielen")
                 video_count = len(self.video_files)
-                self.lbl_status.setText(f"Modell geladen, {video_count} Video(s) bereit")
+                current_status = self.lbl_status.text()
+                self.lbl_status.setText(f"{current_status} | {video_count} Video(s) bereit")
             else:
                 self.btn_play_pause.setEnabled(False)
-                self.label.setText("Keine Videos ausgewählt")
+                if not self.video_files:
+                    self.label.setText("Keine Videos ausgewählt")
+                elif not (self.detection_model or self.pose_model):
+                    self.label.setText("Keine Modelle ausgewählt")
+            
+            # Automatisch speichern
+            self.save_config()
     
     def start_video(self):
-        if not self.model:
-            QMessageBox.warning(self, "Warnung", "Bitte wählen Sie zuerst ein YOLO-Modell aus.")
+        if not (self.detection_model or self.pose_model):
+            QMessageBox.warning(self, "Warnung", "Bitte wählen Sie mindestens ein YOLO-Modell aus.")
             return
             
         if not self.video_files:
@@ -646,8 +948,16 @@ class VideoPlayer(QWidget):
         video_name = os.path.basename(self.video_files[self.current_video_idx])
         current_num = self.current_video_idx + 1
         total_num = len(self.video_files)
-        self.setWindowTitle(f"YOLO Video Annotator - {video_name} ({current_num}/{total_num})")
-        self.lbl_status.setText(f"Spielt ab: {video_name} ({current_num}/{total_num})")
+        self.setWindowTitle(f"YOLO Dual Model Video Annotator - {video_name} ({current_num}/{total_num})")
+        
+        status_parts = []
+        if self.detection_model:
+            status_parts.append(f"Detection: {os.path.basename(self.detection_model_path)}")
+        if self.pose_model:
+            status_parts.append(f"Pose: {os.path.basename(self.pose_model_path)}")
+        status_parts.append(f"Video: {video_name} ({current_num}/{total_num})")
+        
+        self.lbl_status.setText(" | ".join(status_parts))
     
     def toggle_playback(self):
         if not self.cap:
@@ -657,12 +967,17 @@ class VideoPlayer(QWidget):
         if self.timer.isActive():
             self.timer.stop()
             self.btn_play_pause.setText("▶ Abspielen")
-            self.lbl_status.setText("Pausiert")
+            current_status = self.lbl_status.text()
+            if "| Video:" in current_status:
+                self.lbl_status.setText(current_status.replace("| Video:", "| Pausiert | Video:"))
+            else:
+                self.lbl_status.setText("Pausiert")
         else:
             self.timer.start()
             self.btn_play_pause.setText("⏸ Pausieren")
-            video_name = os.path.basename(self.video_files[self.current_video_idx])
-            self.lbl_status.setText(f"Spielt ab: {video_name}")
+            current_status = self.lbl_status.text()
+            if "| Pausiert |" in current_status:
+                self.lbl_status.setText(current_status.replace("| Pausiert |", "|"))
     
     def pulse_alarm(self):
         """Animation für den Alarmzustand - ohne Border für stabiles Layout"""
@@ -690,9 +1005,10 @@ class VideoPlayer(QWidget):
         if not result:
             return
             
-        frame, detections = result
+        frame, detections, poses = result
         self.current_frame = frame
         self.last_detections = detections
+        self.last_poses = poses
         
         # Check for alarm condition
         alarm_class_id = self.display_config.get('alarm_class')
@@ -705,14 +1021,14 @@ class VideoPlayer(QWidget):
             elif not alarm_triggered:
                 self.alarm_active = False
                 
-        # Render the frame with detections
+        # Render the frame with detections and poses
         self.render_frame()
         
         # Release the processing lock
         self.processing_frame = False
     
     def render_frame(self):
-        """Draw detections on the frame and display it"""
+        """Draw detections and poses on the frame and display it"""
         if self.current_frame is None:
             return
             
@@ -724,7 +1040,7 @@ class VideoPlayer(QWidget):
         font_scale = self.display_config.get('font_scale', 5) / 10.0
         text_thickness = self.display_config.get('text_thickness', 1)
         
-        # Draw detections
+        # Draw detection boxes
         for detection in self.last_detections:
             cls_id = str(detection['class_id'])
             cfg = self.class_config.get(cls_id)
@@ -743,6 +1059,49 @@ class VideoPlayer(QWidget):
             # Draw label
             cv2.putText(frame, label, (box['x1'], box['y1'] - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, text_thickness)
+        
+        # Draw poses - FIX: Überprüfe auf gültige Keypoints
+        if self.pose_config.get('show_keypoints', True) or self.pose_config.get('show_skeleton', True):
+            line_thickness = self.pose_config.get('line_thickness', 2)
+            keypoint_radius = self.pose_config.get('keypoint_radius', 3)
+            show_keypoints = self.pose_config.get('show_keypoints', True)
+            show_skeleton = self.pose_config.get('show_skeleton', True)
+            
+            for pose in self.last_poses:
+                keypoints = pose['keypoints']
+                
+                if not keypoints:  # Skip wenn keine gültigen Keypoints
+                    continue
+                
+                # Erstelle Keypoint-Array für einfacheren Zugriff
+                kp_array = [None] * 17  # COCO hat 17 Keypoints
+                for kp in keypoints:
+                    if kp['id'] < 17 and kp['x'] > 0 and kp['y'] > 0:  # Gültige Koordinaten
+                        kp_array[kp['id']] = (int(kp['x']), int(kp['y']))
+                
+                # Zeichne Skelett-Verbindungen - FIX: Validiere Verbindungen
+                if show_skeleton:
+                    for connection in POSE_CONNECTIONS:
+                        pt1_idx, pt2_idx = connection
+                        if (pt1_idx < len(kp_array) and pt2_idx < len(kp_array) and 
+                            kp_array[pt1_idx] is not None and kp_array[pt2_idx] is not None):
+                            
+                            # Zusätzliche Validierung der Koordinaten
+                            pt1 = kp_array[pt1_idx]
+                            pt2 = kp_array[pt2_idx]
+                            
+                            if (pt1[0] > 0 and pt1[1] > 0 and pt2[0] > 0 and pt2[1] > 0 and
+                                pt1[0] < frame.shape[1] and pt1[1] < frame.shape[0] and
+                                pt2[0] < frame.shape[1] and pt2[1] < frame.shape[0]):
+                                cv2.line(frame, pt1, pt2, (0, 255, 0), line_thickness)
+                
+                # Zeichne Keypoints - FIX: Validiere Koordinaten
+                if show_keypoints:
+                    for kp in keypoints:
+                        x, y = int(kp['x']), int(kp['y'])
+                        if (x > 0 and y > 0 and 
+                            x < frame.shape[1] and y < frame.shape[0]):  # Innerhalb Bildgrenzen
+                            cv2.circle(frame, (x, y), keypoint_radius, (0, 0, 255), -1)
         
         # Convert to Qt format for display
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -767,8 +1126,16 @@ class VideoPlayer(QWidget):
             video_name = os.path.basename(self.video_files[self.current_video_idx])
             current_num = self.current_video_idx + 1
             total_num = len(self.video_files)
-            self.setWindowTitle(f"YOLO Video Annotator - {video_name} ({current_num}/{total_num})")
-            self.lbl_status.setText(f"Spielt ab: {video_name} ({current_num}/{total_num})")
+            self.setWindowTitle(f"YOLO Dual Model Video Annotator - {video_name} ({current_num}/{total_num})")
+            
+            status_parts = []
+            if self.detection_model:
+                status_parts.append(f"Detection: {os.path.basename(self.detection_model_path)}")
+            if self.pose_model:
+                status_parts.append(f"Pose: {os.path.basename(self.pose_model_path)}")
+            status_parts.append(f"Video: {video_name} ({current_num}/{total_num})")
+            
+            self.lbl_status.setText(" | ".join(status_parts))
             
             # Start next video
             if self.cap:
@@ -780,24 +1147,92 @@ class VideoPlayer(QWidget):
         self.processing_frame = True
         
         # Submit to thread pool
-        worker = DetectionWorker(frame, self.model, self.class_config)
+        worker = DualDetectionWorker(frame, self.detection_model, self.pose_model, 
+                                   self.class_config, self.pose_config)
         worker.signals.result.connect(self.handle_detection_result)
         worker.signals.error.connect(lambda err: print(f"Error: {err}"))
         self.threadpool.start(worker)
     
+    def find_or_create_config_file(self):
+        """Findet oder erstellt eine config.json Datei im App-Verzeichnis"""
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(app_dir, "config.json")
+        
+        # Schaue auch nach anderen JSON-Dateien im Verzeichnis
+        if not os.path.exists(config_path):
+            json_files = [f for f in os.listdir(app_dir) if f.endswith('.json')]
+            
+            # Versuche eine passende Konfigurationsdatei zu finden
+            for json_file in json_files:
+                try:
+                    with open(os.path.join(app_dir, json_file), 'r', encoding='utf-8') as f:
+                        content = json.load(f)
+                        # Prüfe ob es eine YOLO-Konfigurationsdatei ist
+                        if any(key in content for key in ['model_path', 'detection_model_path', 'class_config']):
+                            config_path = os.path.join(app_dir, json_file)
+                            print(f"Gefundene Konfigurationsdatei: {config_path}")
+                            break
+                except:
+                    continue
+        
+        # Wenn keine config.json existiert, erstelle eine
+        if not os.path.exists(config_path):
+            default_config = {
+                'detection_model_path': '',
+                'pose_model_path': '',
+                'class_config': {},
+                'pose_config': {
+                    'pose_detect_class': None,
+                    'min_confidence': 0.3,
+                    'line_thickness': 2,
+                    'keypoint_radius': 3,
+                    'show_keypoints': True,
+                    'show_skeleton': True
+                },
+                'display_config': {
+                    'box_thickness': 2,
+                    'font_scale': 5,
+                    'text_thickness': 1,
+                    'playback_speed': 30,
+                    'alarm_class': None
+                },
+                'video_files': []
+            }
+            try:
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(default_config, f, indent=2)
+                print(f"Neue Konfigurationsdatei erstellt: {config_path}")
+            except Exception as e:
+                print(f"Konnte config.json nicht erstellen: {e}")
+        
+        return config_path
+    
     def load_default_config(self):
-        """Load default configuration if config.json exists"""
-        config_path = 'config.json'
+        """Load default configuration if config.json exists or create one"""
+        config_path = self.find_or_create_config_file()
+        
         if os.path.exists(config_path):
             try:
-                with open(config_path, 'r') as f:
+                with open(config_path, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                 
-                self.model_path = config.get('model_path', '')
+                # Konfiguration laden mit Fallback-Werten und Migration von alten Formaten
+                self.detection_model_path = config.get('detection_model_path', config.get('model_path', ''))
+                self.pose_model_path = config.get('pose_model_path', '')
                 self.class_config = config.get('class_config', {})
                 
+                # Pose config mit Standardwerten
+                self.pose_config = config.get('pose_config', {
+                    'pose_detect_class': None,
+                    'min_confidence': 0.3,
+                    'line_thickness': 2,
+                    'keypoint_radius': 3,
+                    'show_keypoints': True,
+                    'show_skeleton': True
+                })
+                
                 # Display config aus alter Struktur migrieren
-                display = config.get('display', {})
+                display = config.get('display_config', config.get('display', {}))
                 self.display_config = {
                     'box_thickness': display.get('box_thickness', 2),
                     'font_scale': display.get('font_scale', 5),
@@ -808,48 +1243,75 @@ class VideoPlayer(QWidget):
                 
                 # Video files aus Konfiguration laden (falls vorhanden)
                 self.video_files = config.get('video_files', [])
+                # Entferne nicht existierende Videos
+                self.video_files = [vf for vf in self.video_files if os.path.exists(vf)]
                 
                 # Farben konvertieren
                 for cls_id, cfg in self.class_config.items():
                     if 'color' in cfg and isinstance(cfg['color'], list):
                         cfg['color'] = tuple(cfg['color'])
                 
-                # Modell laden falls Pfad vorhanden
-                if self.model_path and os.path.exists(self.model_path):
+                # Detection Modell laden falls Pfad vorhanden
+                if self.detection_model_path and os.path.exists(self.detection_model_path):
                     try:
-                        self.model = YOLO(self.model_path)
-                        model_name = os.path.basename(self.model_path)
-                        self.lbl_status.setText(f"Modell geladen: {model_name}")
-                        
-                        if self.video_files:
-                            self.btn_play_pause.setEnabled(True)
-                            video_count = len(self.video_files)
-                            self.lbl_status.setText(f"Modell geladen, {video_count} Video(s) bereit")
-                            self.label.setText("Bereit zum Abspielen")
+                        self.detection_model = YOLO(self.detection_model_path)
+                        detection_model_name = os.path.basename(self.detection_model_path)
+                        print(f"Detection Modell geladen: {detection_model_name}")
                     except Exception as e:
-                        print(f"Fehler beim Laden des Modells: {e}")
+                        print(f"Fehler beim Laden des Detection Modells: {e}")
+                        self.detection_model = None
+                
+                # Pose Modell laden falls Pfad vorhanden
+                if self.pose_model_path and os.path.exists(self.pose_model_path):
+                    try:
+                        self.pose_model = YOLO(self.pose_model_path)
+                        pose_model_name = os.path.basename(self.pose_model_path)
+                        print(f"Pose Modell geladen: {pose_model_name}")
+                    except Exception as e:
+                        print(f"Fehler beim Laden des Pose Modells: {e}")
+                        self.pose_model = None
+                
+                # Status aktualisieren
+                status_parts = []
+                if self.detection_model:
+                   status_parts.append(f"Detection: {os.path.basename(self.detection_model_path)}")
+                if self.pose_model:
+                    status_parts.append(f"Pose: {os.path.basename(self.pose_model_path)}")
+                
+                if status_parts and self.video_files:
+                    self.btn_play_pause.setEnabled(True)
+                    video_count = len(self.video_files)
+                    status_parts.append(f"{video_count} Video(s) bereit")
+                    self.lbl_status.setText(" | ".join(status_parts))
+                    self.label.setText("Bereit zum Abspielen")
+                elif status_parts:
+                    self.lbl_status.setText(" | ".join(status_parts))
+                else:
+                    self.lbl_status.setText("Keine Modelle geladen")
                         
             except Exception as e:
                 print(f"Fehler beim Laden der Konfiguration: {e}")
-                # Initialisiere mit Standard-Konfiguration
+                # Verwende Standard-Konfiguration
                 self.class_config = {
-                    "0": {"name": "GEFAHR", "color": COLORS["Red"], "conf": 0.5, "iou": 0.4},
-                    "1": {"name": "Chair", "color": COLORS["Green"], "conf": 0.6, "iou": 0.4},
-                    "2": {"name": "Human", "color": COLORS["Blue"], "conf": 0.6, "iou": 0.4}
+                    "0": {"name": "GEFAHR", "color": COLORS["Red"], "conf": 0.5, "iou": 0.4}
                 }
     
     def save_config(self):
         """Save current configuration to config.json"""
+        config_path = self.find_or_create_config_file()
+        
         config = {
-            'model_path': self.model_path,
+            'detection_model_path': self.detection_model_path,
+            'pose_model_path': self.pose_model_path,
             'class_config': self.class_config,
+            'pose_config': self.pose_config,
             'display_config': self.display_config,
             'video_files': self.video_files
         }
         
         try:
-            with open('config.json', 'w') as f:
-                json.dump(config, f, indent=2)
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
         except Exception as e:
             print(f"Fehler beim Speichern der Konfiguration: {e}")
     
@@ -865,7 +1327,7 @@ class VideoPlayer(QWidget):
         event.accept()
 
 if __name__ == "__main__":
-   app = QApplication(sys.argv)
-   player = VideoPlayer()
-   player.show()
-   sys.exit(app.exec())        
+    app = QApplication(sys.argv)
+    player = VideoPlayer()
+    player.show()
+    sys.exit(app.exec())
