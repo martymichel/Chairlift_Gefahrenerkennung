@@ -22,9 +22,16 @@ class VideoPlayer(QWidget):
         super().__init__()
         self.setWindowTitle("YOLO Dual Model Video Annotator - Sturzerkennung Skilift")
         
-        # Vollbild-Modus aktivieren
-        self.showMaximized()
-        
+        # Vollbild-Modus für Windows 11
+        if os.name == 'nt':  # Überprüfen, ob wir auf Windows sind
+            self.setWindowState(Qt.WindowState.WindowFullScreen)
+        else:
+            self.setWindowState(Qt.WindowState.WindowMaximized)
+        # Bildschrirmgrösse ermitteln
+        screen_geometry = self.screen().geometry()
+        # Setze die Größe des Fensters auf die Bildschirmgröße (y  Abzug 40 Pixel für Taskleiste)
+        self.resize(screen_geometry.width(), screen_geometry.height() - 40)
+
         # Thread pool for parallel processing
         self.threadpool = QThreadPool()
         self.threadpool.setMaxThreadCount(4)
@@ -549,10 +556,11 @@ class VideoPlayer(QWidget):
         # Konfiguration beim Beenden speichern
         self.save_config()
         event.accept()
-
+    
+    # Mouse-Event-Handler für FOI-Interaktion
     def mouse_press_event(self, event):
         """Behandelt Maus-Klick-Events für FOI-Manipulation"""
-        if not self.foi_config.get('enabled', False) or not self.current_frame:
+        if not self.foi_config.get('enabled', False) or self.current_frame is None:
             return
             
         frame_pos = self._pixmap_to_frame_coordinates(event.position().toPoint())
@@ -566,12 +574,15 @@ class VideoPlayer(QWidget):
         if corner_idx >= 0:
             self.mouse_pressed = True
             self.foi_manager.dragging_corner = corner_idx
-            self.last_mouse_pos = (x, y)    
+            self.last_mouse_pos = (x, y)
+        else:
+            # Wenn nicht auf einer Ecke, dann FOI neu setzen
+            # self.foi_manager.set_foi_corners(x, y)
+            self.render_frame()
     
-    # Mouse-Event-Handler für FOI-Interaktion
     def mouse_move_event(self, event):
         """Behandelt Maus-Bewegungs-Events für FOI-Manipulation"""
-        if not self.foi_config.get('enabled', False) or not self.current_frame:
+        if not self.foi_config.get('enabled', False) or self.current_frame is None:
             return
             
         frame_pos = self._pixmap_to_frame_coordinates(event.position().toPoint())
@@ -601,7 +612,7 @@ class VideoPlayer(QWidget):
     
     def _pixmap_to_frame_coordinates(self, pixmap_pos):
         """Konvertiert Pixmap-Koordinaten zu Frame-Koordinaten"""
-        if not self.current_frame or not self.label.pixmap():
+        if self.current_frame is None or not self.label.pixmap():
             return None
             
         # Pixmap-Dimensionen
