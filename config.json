@@ -29,7 +29,7 @@
         255,
         0
       ],
-      "conf": 0.49999999999999994,
+      "conf": 0.5,
       "iou": 0.94
     },
     "3": {
@@ -44,7 +44,10 @@
     }
   },
   "pose_config": {
-    "pose_detect_class": "2",
+    "pose_detect_classes": [
+      "2",
+      "3"
+    ],
     "min_confidence": 0.3,
     "line_thickness": 1,
     "keypoint_radius": 2,
@@ -55,11 +58,40 @@
     "box_thickness": 1,
     "font_scale": 4,
     "text_thickness": 1,
-    "playback_speed": 60,
     "alarm_class": "3"
   },
+  "foi_config": {
+    "enabled": true,
+    "points": [
+      [
+        0.25,
+        0.25
+      ],
+      [
+        0.75,
+        0.25
+      ],
+      [
+        0.75,
+        0.75
+      ],
+      [
+        0.25,
+        0.75
+      ]
+    ],
+    "count_class": "2",
+    "alert_class": "3",
+    "alert_timeout": 5.0,
+    "foi_color": [
+      0,
+      255,
+      255
+    ],
+    "foi_thickness": 3
+  },
   "video_files": [
-    "C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/5_Video/Normal_original.mp4",
-    "C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/5_Video/Umfallen_short.mp4"
+    "C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/5_Video/Umfallen_short.mp4",
+    "C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/5_Video/Normal_short.mp4"
   ]
 }
