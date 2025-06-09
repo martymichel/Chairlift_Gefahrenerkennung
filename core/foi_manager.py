@@ -2,8 +2,6 @@ import cv2
 import numpy as np
 import time
 from config.constants import FOI_CORNER_SIZE, FOI_CORNER_COLOR, FOI_HOVER_COLOR
-from PyQt6.QtGui import QPixmap, QImage, QMouseEvent
-from PyQt6.QtCore import Qt, QRectF
 
 class FOIManager:
     """Verwaltet das Field of Interest (FOI) für die Skilift-Überwachung"""

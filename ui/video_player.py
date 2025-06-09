@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
     QFrame, QProgressBar, QMessageBox, QStatusBar
 )
-from PyQt6.QtGui import QPixmap, QImage, QMouseEvent
+from PyQt6.QtGui import QPixmap, QImage
 from PyQt6.QtCore import QTimer, Qt, QThreadPool
 from ultralytics import YOLO
 
@@ -22,14 +22,9 @@ class VideoPlayer(QWidget):
         super().__init__()
         self.setWindowTitle("YOLO Dual Model Video Annotator - Sturzerkennung Skilift")
         
-        # Vollbild-Modus sauber auf Windows 11
-        # Vollbild mit Fenster mit Rahmen, ohne die Taskleiste zu verdecken
-        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowCloseButtonHint)
-        # Bildschirmgröße abrufen
-        screen_geometry = self.screen().availableGeometry()
-        # Grösse einstellen (y - Höhe der Taskleiste)
-        self.resize(screen_geometry.width(), screen_geometry.height() - 40)
-
+        # Vollbild-Modus aktivieren
+        self.showMaximized()
+        
         # Thread pool for parallel processing
         self.threadpool = QThreadPool()
         self.threadpool.setMaxThreadCount(4)
@@ -164,9 +159,9 @@ class VideoPlayer(QWidget):
         
         # Mouse-Events für FOI-Interaktion aktivieren
         self.label.setMouseTracking(True)
-        self.label.mousePressEvent = self.mousePressEvent
-        self.label.mouseMoveEvent = self.mouseMoveEvent
-        self.label.mouseReleaseEvent = self.mouseReleaseEvent
+        self.label.mousePressEvent = self.mouse_press_event
+        self.label.mouseMoveEvent = self.mouse_move_event
+        self.label.mouseReleaseEvent = self.mouse_release_event
         
         video_layout.addWidget(self.label)
         
@@ -554,32 +549,95 @@ class VideoPlayer(QWidget):
         # Konfiguration beim Beenden speichern
         self.save_config()
         event.accept()
-    
-    # Mouse-Event-Handler für FOI-Interaktion, passend zu FOIManager
-    def mousePressEvent(self, event):
-        """Behandelt Mausklicks für FOI-Interaktion"""
-        if event.button() == Qt.MouseButton.LeftButton:
+
+    def mouse_press_event(self, event):
+        """Behandelt Maus-Klick-Events für FOI-Manipulation"""
+        if not self.foi_config.get('enabled', False) or not self.current_frame:
+            return
+            
+        frame_pos = self._pixmap_to_frame_coordinates(event.position().toPoint())
+        if frame_pos is None:
+            return
+            
+        x, y = frame_pos
+        
+        # Prüfe ob auf einer Ecke geklickt wurde
+        corner_idx = self.foi_manager.get_corner_at_position(x, y)
+        if corner_idx >= 0:
             self.mouse_pressed = True
-            self.last_mouse_pos = (event.x(), event.y())
-            corner_idx = self.foi_manager.get_corner_at_position(event.x(), event.y())
-            if corner_idx >= 0:
-                self.foi_manager.set_active_corner(corner_idx)
-        elif event.button() == Qt.MouseButton.RightButton:
-            # Rechtsklick zum Zurücksetzen des FOI
-            self.foi_manager.reset_foi()
-            self.render_frame()
-            self.status_bar.showMessage("FOI zurückgesetzt")
-
-    def mouseMoveEvent(self, event):
-        """Behandelt Mausbewegungen für FOI-Interaktion"""
-        if self.mouse_pressed and self.last_mouse_pos is not None:
-            self.foi_manager.update_foi_selection(event.position())
-            self.render_frame()
-
-    def mouseReleaseEvent(self, event):
-        """Behandelt das Loslassen der Maustaste für FOI-Interaktion"""
-        if event.button() == Qt.MouseButton.LeftButton:
+            self.foi_manager.dragging_corner = corner_idx
+            self.last_mouse_pos = (x, y)    
+    
+    # Mouse-Event-Handler für FOI-Interaktion
+    def mouse_move_event(self, event):
+        """Behandelt Maus-Bewegungs-Events für FOI-Manipulation"""
+        if not self.foi_config.get('enabled', False) or not self.current_frame:
+            return
+            
+        frame_pos = self._pixmap_to_frame_coordinates(event.position().toPoint())
+        if frame_pos is None:
+            return
+            
+        x, y = frame_pos
+        
+        if self.mouse_pressed and self.foi_manager.dragging_corner >= 0:
+            # Ecke verschieben
+            self.foi_manager.move_corner(self.foi_manager.dragging_corner, x, y)
+            self.render_frame()  # Frame neu rendern
+        else:
+            # Hover-Effekt für Ecken
+            corner_idx = self.foi_manager.get_corner_at_position(x, y)
+            if corner_idx != self.foi_manager.hover_corner:
+                self.foi_manager.hover_corner = corner_idx
+                if self.current_frame is not None:
+                    self.render_frame()  # Frame neu rendern für Hover-Effekt
+    
+    def mouse_release_event(self, event):
+        """Behandelt Maus-Los-Events für FOI-Manipulation"""
+        if self.mouse_pressed:
             self.mouse_pressed = False
-            self.last_mouse_pos = None
-            self.foi_manager.finalize_foi_selection(event.position())
-            self.render_frame()
+            self.foi_manager.dragging_corner = -1
+            self.save_config()  # FOI-Position speichern
+    
+    def _pixmap_to_frame_coordinates(self, pixmap_pos):
+        """Konvertiert Pixmap-Koordinaten zu Frame-Koordinaten"""
+        if not self.current_frame or not self.label.pixmap():
+            return None
+            
+        # Pixmap-Dimensionen
+        pixmap = self.label.pixmap()
+        pixmap_width = pixmap.width()
+        pixmap_height = pixmap.height()
+        
+        # Label-Dimensionen
+        label_width = self.label.width()
+        label_height = self.label.height()
+        
+        # Frame-Dimensionen
+        frame_height, frame_width = self.current_frame.shape[:2]
+        
+        # Berechne Skalierung und Offset (KeepAspectRatio)
+        scale_x = pixmap_width / frame_width
+        scale_y = pixmap_height / frame_height
+        scale = min(scale_x, scale_y)
+        
+        scaled_width = int(frame_width * scale)
+        scaled_height = int(frame_height * scale)
+        
+        # Offset für Zentrierung
+        offset_x = (label_width - scaled_width) // 2
+        offset_y = (label_height - scaled_height) // 2
+        
+        # Relative Position im Pixmap
+        rel_x = pixmap_pos.x() - offset_x
+        rel_y = pixmap_pos.y() - offset_y
+        
+        # Prüfe ob innerhalb des Pixmaps
+        if rel_x < 0 or rel_y < 0 or rel_x >= scaled_width or rel_y >= scaled_height:
+            return None
+        
+        # Konvertiere zu Frame-Koordinaten
+        frame_x = int(rel_x / scale)
+        frame_y = int(rel_y / scale)
+        
+        return (frame_x, frame_y)
