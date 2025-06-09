@@ -1,41 +1,56 @@
 {
-  "model_path": "C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/yolo training results/weights/last.pt",
+  "model_path": "C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/Training 09.06.2025 mm/trained_on_whatsapp_vids_09.06.2025_mm.pt",
   "class_config": {
     "0": {
-      "name": "DANGER",
-      "color": [
-        0,
-        0,
-        255
-      ],
-      "conf": 0.29999999999999977,
-      "iou": 0.4
-    },
-    "1": {
-      "name": "Human",
+      "name": "Buegel",
       "color": [
         0,
         255,
         0
       ],
-      "conf": 0.9,
-      "iou": 0.4
+      "conf": 0.3,
+      "iou": 0.94
+    },
+    "1": {
+      "name": "benutzt",
+      "color": [
+        255,
+        0,
+        0
+      ],
+      "conf": 0.3,
+      "iou": 0.94
     },
     "2": {
-      "name": "Chair",
+      "name": "HUMAN",
+      "color": [
+        255,
+        255,
+        0
+      ],
+      "conf": 0.3,
+      "iou": 0.94
+    },
+    "3": {
+      "name": "GEFAHR",
       "color": [
         0,
-        255,
+        0,
         255
       ],
-      "conf": 0.9,
-      "iou": 0.4
+      "conf": 0.25,
+      "iou": 0.94
     }
   },
-  "display": {
+  "display_config": {
     "box_thickness": 2,
-    "font_scale": 4,
+    "font_scale": 5,
     "text_thickness": 1,
-    "playback_speed": 39
-  }
+    "playback_speed": 53,
+    "alarm_class": "0"
+  },
+  "video_files": [
+    "C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/5_Video/Normal_original.mp4",
+    "C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/5_Video/Umfallen_short.mp4"
+  ]
 }

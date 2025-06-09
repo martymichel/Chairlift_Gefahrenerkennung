@@ -1,7 +1,0 @@
-names:
-  0: DANGER
-  1: Human
-  2: Chair
-path: C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/4_Splitted
-train: C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/4_Splitted\train.txt
-val: C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/4_Splitted\val.txt
