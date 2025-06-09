@@ -15,18 +15,28 @@ from PyQt6.QtGui import QPixmap, QImage, QColor, QIcon
 from PyQt6.QtCore import QTimer, Qt, QPropertyAnimation, QThread, pyqtSignal, QRunnable, QThreadPool, QObject
 from ultralytics import YOLO
 
-# Predefined colors for bounding boxes (in BGR format for OpenCV)
+# Erweiterte Farbpalette für mehr Klassen (in BGR format für OpenCV)
 COLORS = {
-    "Red": (0, 0, 255),      # BGR order
-    "Green": (0, 255, 0),    # BGR order
-    "Blue": (255, 0, 0),     # BGR order
-    "Yellow": (0, 255, 255), # BGR order
-    "Cyan": (255, 255, 0),   # BGR order
-    "Magenta": (255, 0, 255),# BGR order
-    "Orange": (0, 165, 255), # BGR order
-    "Purple": (128, 0, 128), # BGR order
-    "Brown": (42, 42, 165),  # BGR order
-    "Pink": (203, 192, 255)  # BGR order
+    "Red": (0, 0, 255),
+    "Green": (0, 255, 0),
+    "Blue": (255, 0, 0),
+    "Yellow": (0, 255, 255),
+    "Cyan": (255, 255, 0),
+    "Magenta": (255, 0, 255),
+    "Orange": (0, 165, 255),
+    "Purple": (128, 0, 128),
+    "Brown": (42, 42, 165),
+    "Pink": (203, 192, 255),
+    "Lime": (0, 255, 128),
+    "Teal": (128, 128, 0),
+    "Navy": (128, 0, 0),
+    "Maroon": (0, 0, 128),
+    "Olive": (0, 128, 128),
+    "Silver": (192, 192, 192),
+    "Gold": (0, 215, 255),
+    "Coral": (80, 127, 255),
+    "Turquoise": (208, 224, 64),
+    "Violet": (238, 130, 238),
 }
 
 class WorkerSignals(QObject):
@@ -196,7 +206,9 @@ class VideoPlayer(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("YOLO Video Annotator")
-        self.resize(1200, 720)
+        
+        # Vollbild-Modus aktivieren
+        self.showMaximized()
         
         # Thread pool for parallel processing
         self.threadpool = QThreadPool()
@@ -464,7 +476,7 @@ class VideoPlayer(QWidget):
         # Create/update class config
         new_config = {}
         
-        # Assign colors to the classes
+        # Assign colors to the classes with improved cycling
         color_list = list(COLORS.values())
         
         for cls_id, name in class_names.items():
@@ -476,7 +488,7 @@ class VideoPlayer(QWidget):
                 new_config[cls_id_str] = self.class_config[cls_id_str]
                 new_config[cls_id_str]['name'] = name  # Update name from model
             else:
-                # Assign a color from our predefined list
+                # Assign a color from our predefined list (mit Modulo für unbegrenzte Klassen)
                 color_idx = cls_id % len(color_list)
                 color = color_list[color_idx]
                 
@@ -576,9 +588,10 @@ class VideoPlayer(QWidget):
             self.btn_toggle_settings_main.setVisible(False)
     
     def pulse_alarm(self):
-        """Animation für den Alarmzustand"""
+        """Animation für den Alarmzustand - ohne Border für stabiles Layout"""
         if not self.alarm_active:
             self.alarm_timer.stop()
+            # Zurück zum ursprünglichen Style ohne Border
             self.video_container.setStyleSheet("background-color: #222; border-radius: 5px;")
             return
             
@@ -591,12 +604,11 @@ class VideoPlayer(QWidget):
             self.pulse_value = 0
             self.pulse_direction = 1
             
-        # Intensivere Animation bei Alarm - stärkere Farbübergänge
-        intensity = 155 + int(self.pulse_value)  # 155-255
-        border_intensity = 255 - intensity
+        # Verwende nur Background-Color für den Alarm-Effekt
+        # KEIN Border, um Layout-Verschiebungen zu vermeiden
+        intensity = 100 + int(self.pulse_value * 1.55)  # 100-255
         self.video_container.setStyleSheet(f"""
             background-color: rgb({intensity}, 0, 0);
-            border: 5px solid rgb(255, {border_intensity}, 0);
             border-radius: 5px;
         """)
     
@@ -658,9 +670,6 @@ class VideoPlayer(QWidget):
             # Draw label with separate text thickness
             cv2.putText(frame, label, (box['x1'], box['y1'] - 10),
                        cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, text_thickness)
-        
-        # Remove the warning text overlay - as requested
-        # No cv2.putText for alarm text anymore
         
         # Convert to Qt format for display
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -736,8 +745,8 @@ class VideoPlayer(QWidget):
                 # Initialize with default config if no file selected
                 if not self.class_config:
                     self.class_config = {
-                        "0": {"name": "GEFAHR", "color": COLORS["Red"], "conf": 0.5, "iou": 0.4},
-                        "1": {"name": "Chair", "color": COLORS["Green"], "conf": 0.6, "iou": 0.4},
+                        "0": {"name": "GEFAHR", "color": COLORS["Red"], "conf": 0.5, "iou": 0.9},
+                        "1": {"name": "Chair", "color": COLORS["Green"], "conf": 0.6, "iou": 0.9},
                         "2": {"name": "Human", "color": COLORS["Blue"], "conf": 0.6, "iou": 0.4}
                     }
                     self.update_alarm_classes()
@@ -818,19 +827,19 @@ class VideoPlayer(QWidget):
                 }
                 self.update_alarm_classes()
     
-    def closeEvent(self, event):
-        # Clean up resources
-        self.timer.stop()
-        self.alarm_timer.stop()
-        if self.cap:
-            self.cap.release()
-            
-        # Save config on exit
-        self.save_config()
-        event.accept()
+def closeEvent(self, event):
+    # Clean up resources
+    self.timer.stop()
+    self.alarm_timer.stop()
+    if self.cap:
+        self.cap.release()
+        
+    # Save config on exit
+    self.save_config()
+    event.accept()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     player = VideoPlayer()
     player.show()
-    sys.exit(app.exec())
+    sys.exit(app.exec())                        
