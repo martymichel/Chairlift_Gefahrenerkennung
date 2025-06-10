@@ -48,36 +48,36 @@
       "2",
       "3"
     ],
-    "min_confidence": 0.2,
+    "min_confidence": 0.15,
     "line_thickness": 1,
-    "keypoint_radius": 2,
+    "keypoint_radius": 1,
     "show_keypoints": true,
     "show_skeleton": true
   },
   "display_config": {
     "box_thickness": 1,
-    "font_scale": 4,
-    "text_thickness": 2,
+    "font_scale": 2,
+    "text_thickness": 1,
     "alarm_class": "3"
   },
   "foi_config": {
     "enabled": true,
     "points": [
       [
-        0.35259433962264153,
-        0.39748953974895396
+        0.30306603773584906,
+        0.03556485355648536
+      ],
+      [
+        0.6591981132075472,
+        0.03556485355648536
       ],
       [
         0.6639150943396226,
-        0.39748953974895396
+        0.9623430962343096
       ],
       [
-        0.6450471698113207,
-        0.8556485355648535
-      ],
-      [
-        0.36674528301886794,
-        0.8493723849372385
+        0.31014150943396224,
+        0.9623430962343096
       ]
     ],
     "count_class": "2",
@@ -88,7 +88,7 @@
       255,
       255
     ],
-    "foi_thickness": 3
+    "foi_thickness": 1
   },
   "video_files": [
     "C:/Users/miche/Documents/GitHub/Chairlift_Gefahrenerkennung/5_Video/Normal_short.mp4",

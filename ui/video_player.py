@@ -166,7 +166,7 @@ class VideoPlayer(QWidget):
         return status_bar
     
     def _create_toolbar(self):
-        """Erstellt die Toolbar"""
+        """Erstellt die Toolbar mit Reset-Button"""
         toolbar_layout = QHBoxLayout()
         
         self.btn_settings = QPushButton("⚙ Einstellungen")
@@ -176,11 +176,25 @@ class VideoPlayer(QWidget):
         self.btn_play_pause.setStyleSheet("padding: 8px; font-size: 14px;")
         self.btn_play_pause.setEnabled(False)
         
+        # NEU: Reset-Button für Lift-Status
+        self.btn_reset_lift = QPushButton("🔄 Lift Reset")
+        self.btn_reset_lift.setStyleSheet("""
+            padding: 8px; 
+            font-size: 14px; 
+            background-color: #dc3545; 
+            color: white; 
+            border: none; 
+            border-radius: 4px;
+            font-weight: bold;
+        """)
+        self.btn_reset_lift.setToolTip("Setzt den Lift-Status zurück auf Normalbetrieb und stoppt alle Timer")
+        
         self.lbl_status = QLabel("Bereit - Konfiguration für Sturzerkennung an Skiliften")
         self.lbl_status.setStyleSheet("color: #666; font-size: 12px;")
         
         toolbar_layout.addWidget(self.btn_settings)
         toolbar_layout.addWidget(self.btn_play_pause)
+        toolbar_layout.addWidget(self.btn_reset_lift)  # NEU
         toolbar_layout.addStretch()
         toolbar_layout.addWidget(self.lbl_status)
         
@@ -210,6 +224,55 @@ class VideoPlayer(QWidget):
         """Verbindet die Signale mit ihren Slots"""
         self.btn_settings.clicked.connect(self.open_settings)
         self.btn_play_pause.clicked.connect(self.toggle_playback)
+        self.btn_reset_lift.clicked.connect(self.reset_lift_status)  # NEU
+    
+    def reset_lift_status(self):
+        """NEU: Setzt den Lift-Status manuell zurück"""
+        if self.foi_manager:
+            self.foi_manager.manual_reset()
+            
+            # Sofortiges Update der Status Bar
+            self.status_bar.showMessage("Lift Normalbetrieb")
+            self.status_bar.setStyleSheet("""
+                QStatusBar {
+                    background-color: #d4edda;
+                    border-top: 2px solid #c3e6cb;
+                    color: #155724;
+                    font-size: 18px;
+                    font-weight: bold;
+                    text-align: center;
+                    padding: 0px;
+                }
+                QStatusBar::item { border: none; }
+            """)
+            
+            # Visuelles Feedback
+            self.btn_reset_lift.setText("✅ Reset")
+            self.btn_reset_lift.setStyleSheet("""
+                padding: 8px; 
+                font-size: 14px; 
+                background-color: #28a745; 
+                color: white; 
+                border: none; 
+                border-radius: 4px;
+                font-weight: bold;
+            """)
+            
+            # Nach 2 Sekunden Button-Text zurücksetzen
+            QTimer.singleShot(2000, self._reset_button_style)
+    
+    def _reset_button_style(self):
+        """Setzt den Reset-Button-Style zurück"""
+        self.btn_reset_lift.setText("🔄 Lift Reset")
+        self.btn_reset_lift.setStyleSheet("""
+            padding: 8px; 
+            font-size: 14px; 
+            background-color: #dc3545; 
+            color: white; 
+            border: none; 
+            border-radius: 4px;
+            font-weight: bold;
+        """)
     
     def open_settings(self):
         """Öffnet den Einstellungsdialog"""
@@ -398,7 +461,18 @@ class VideoPlayer(QWidget):
             
             # Status-Bar aktualisieren mit verbessertem Styling
             lift_status = self.foi_manager.get_lift_status()
-            self.status_bar.showMessage(lift_status)
+            
+            # Erweiterte Status-Anzeige mit Timer-Info
+            status_info = self.foi_manager.get_status_info()
+            if status_info['alert_active'] and status_info['remaining_timeout'] is not None:
+                if status_info['remaining_timeout'] > 0:
+                    display_status = f"{lift_status} ({status_info['remaining_timeout']:.1f}s)"
+                else:
+                    display_status = lift_status
+            else:
+                display_status = lift_status
+            
+            self.status_bar.showMessage(display_status)
             
             # Status-Bar-Farbe je nach Status ändern - mit dunklem Text
             if "verlangsamt" in lift_status:
