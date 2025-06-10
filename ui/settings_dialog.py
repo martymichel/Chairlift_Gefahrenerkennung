@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QLineEdit, QLabel, QSpinBox, QDoubleSpinBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
     QListWidget, QListWidgetItem, QCheckBox, QFileDialog,
-    QMessageBox, QWidget
+    QMessageBox, QWidget, QScrollArea, QApplication
 )
 from PyQt6.QtCore import Qt
 from ultralytics import YOLO
@@ -12,13 +12,15 @@ from config.constants import COLORS
 from config.config_manager import ConfigManager
 
 class SettingsDialog(QDialog):
-    """Großer übersichtlicher Dialog für alle Einstellungen."""
+    """Großer übersichtlicher Dialog für alle Einstellungen - responsive für verschiedene Bildschirmgrößen."""
     
     def __init__(self, detection_model_path, pose_model_path, class_config, 
                  pose_config, display_config, foi_config, video_files, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Einstellungen")
-        self.resize(1200, 800)
+        
+        # Responsive Größenberechnung basierend auf Bildschirmgröße
+        self._setup_responsive_size()
         
         self.detection_model_path = detection_model_path
         self.pose_model_path = pose_model_path
@@ -33,8 +35,51 @@ class SettingsDialog(QDialog):
         self.setup_ui()
         self.load_settings()
     
+    def _setup_responsive_size(self):
+        """Berechnet responsive Größe basierend auf verfügbarem Bildschirmplatz"""
+        screen = QApplication.primaryScreen()
+        screen_geometry = screen.availableGeometry()
+        
+        # Verfügbare Bildschirmgröße (ohne Taskleiste etc.)
+        available_width = screen_geometry.width()
+        available_height = screen_geometry.height()
+        
+        # Responsive Größenberechnung
+        if available_height < 700:
+            # Sehr kleine Bildschirme (z.B. Netbooks)
+            dialog_width = min(1000, int(available_width * 0.9))
+            dialog_height = int(available_height * 0.85)
+        elif available_height < 900:
+            # Kleine bis mittlere Bildschirme (z.B. Laptops)
+            dialog_width = min(1100, int(available_width * 0.85))
+            dialog_height = int(available_height * 0.8)
+        else:
+            # Große Bildschirme (Desktop)
+            dialog_width = min(1200, int(available_width * 0.8))
+            dialog_height = min(800, int(available_height * 0.75))
+        
+        self.resize(dialog_width, dialog_height)
+        
+        # Dialog zentrieren
+        x = (available_width - dialog_width) // 2 + screen_geometry.x()
+        y = (available_height - dialog_height) // 2 + screen_geometry.y()
+        self.move(x, y)
+    
     def setup_ui(self):
-        main_layout = QHBoxLayout(self)
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Scroll-Area für den Hauptinhalt
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        
+        # Container-Widget für den scrollbaren Inhalt
+        scroll_content = QWidget()
+        content_layout = QHBoxLayout(scroll_content)
+        content_layout.setSpacing(15)
         
         # Linke Seite: Modelle und Videos
         left_widget = self._create_left_panel()
@@ -43,148 +88,176 @@ class SettingsDialog(QDialog):
         right_widget = self._create_right_panel()
         
         # Layout zusammenfügen
-        main_layout.addWidget(left_widget, 1)
-        main_layout.addWidget(right_widget, 2)
+        content_layout.addWidget(left_widget, 1)
+        content_layout.addWidget(right_widget, 2)
         
-        # Buttons unten
+        scroll_area.setWidget(scroll_content)
+        main_layout.addWidget(scroll_area, 1)
+        
+        # Buttons unten (fixiert, nicht scrollend)
         button_layout = self._create_button_layout()
-        
-        # Hauptlayout erweitern
-        main_widget = QWidget()
-        main_widget.setLayout(main_layout)
-        
-        dialog_layout = QVBoxLayout(self)
-        dialog_layout.addWidget(main_widget)
-        dialog_layout.addLayout(button_layout)
+        main_layout.addLayout(button_layout)
         
         # Signal-Verbindungen
         self.connect_signals()
     
     def _create_left_panel(self):
-        """Erstellt das linke Panel mit Modell-, Video- und Display-Einstellungen"""
+        """Erstellt das linke Panel mit Modell-, Video- und Display-Einstellungen - kompakter"""
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
+        left_layout.setSpacing(8)
         
-        # Detection Modell-Auswahl
+        # Detection Modell-Auswahl (kompakter)
         left_layout.addWidget(self._create_detection_model_group())
         
-        # Pose Modell-Auswahl
+        # Pose Modell-Auswahl (kompakter)
         left_layout.addWidget(self._create_pose_model_group())
         
-        # Video-Auswahl
+        # Video-Auswahl (kompakter)
         left_layout.addWidget(self._create_video_group())
         
-        # Darstellungs-Einstellungen
+        # Darstellungs-Einstellungen (kompakter)
         left_layout.addWidget(self._create_display_group())
         
-        # Pose-Einstellungen
+        # Pose-Einstellungen (kompakter)
         left_layout.addWidget(self._create_pose_settings_group())
         
-        # FOI-Einstellungen
+        # FOI-Einstellungen (kompakter)
         left_layout.addWidget(self._create_foi_settings_group())
         
         left_layout.addStretch()
         return left_widget
     
     def _create_detection_model_group(self):
-        """Erstellt die Detection Model Gruppe"""
+        """Erstellt die Detection Model Gruppe - kompakt"""
         detection_model_group = QGroupBox("YOLO Detection Modell")
         detection_model_layout = QVBoxLayout(detection_model_group)
+        detection_model_layout.setSpacing(5)
+        detection_model_layout.setContentsMargins(8, 8, 8, 8)
         
         detection_model_select_layout = QHBoxLayout()
         self.txt_detection_model_path = QLineEdit(self.detection_model_path)
         self.txt_detection_model_path.setReadOnly(True)
-        self.btn_select_detection_model = QPushButton("Detection Modell auswählen")
+        self.txt_detection_model_path.setMaximumHeight(25)
+        self.btn_select_detection_model = QPushButton("Auswählen")
+        self.btn_select_detection_model.setMaximumHeight(25)
+        self.btn_select_detection_model.setMaximumWidth(80)
         detection_model_select_layout.addWidget(self.txt_detection_model_path, 3)
-        detection_model_select_layout.addWidget(self.btn_select_detection_model, 1)
+        detection_model_select_layout.addWidget(self.btn_select_detection_model, 0)
         detection_model_layout.addLayout(detection_model_select_layout)
         
         self.lbl_detection_model_info = QLabel("Kein Detection Modell geladen")
+        self.lbl_detection_model_info.setStyleSheet("font-size: 11px; color: #666;")
         detection_model_layout.addWidget(self.lbl_detection_model_info)
         
         return detection_model_group
     
     def _create_pose_model_group(self):
-        """Erstellt die Pose Model Gruppe"""
+        """Erstellt die Pose Model Gruppe - kompakt"""
         pose_model_group = QGroupBox("YOLO Pose Modell")
         pose_model_layout = QVBoxLayout(pose_model_group)
+        pose_model_layout.setSpacing(5)
+        pose_model_layout.setContentsMargins(8, 8, 8, 8)
         
         pose_model_select_layout = QHBoxLayout()
         self.txt_pose_model_path = QLineEdit(self.pose_model_path)
         self.txt_pose_model_path.setReadOnly(True)
-        self.btn_select_pose_model = QPushButton("Pose Modell auswählen")
+        self.txt_pose_model_path.setMaximumHeight(25)
+        self.btn_select_pose_model = QPushButton("Auswählen")
+        self.btn_select_pose_model.setMaximumHeight(25)
+        self.btn_select_pose_model.setMaximumWidth(80)
         pose_model_select_layout.addWidget(self.txt_pose_model_path, 3)
-        pose_model_select_layout.addWidget(self.btn_select_pose_model, 1)
+        pose_model_select_layout.addWidget(self.btn_select_pose_model, 0)
         pose_model_layout.addLayout(pose_model_select_layout)
         
         self.lbl_pose_model_info = QLabel("Kein Pose Modell geladen")
+        self.lbl_pose_model_info.setStyleSheet("font-size: 11px; color: #666;")
         pose_model_layout.addWidget(self.lbl_pose_model_info)
         
         return pose_model_group
     
     def _create_video_group(self):
-        """Erstellt die Video-Gruppe"""
+        """Erstellt die Video-Gruppe - kompakter"""
         video_group = QGroupBox("Videos (Endlosschleife)")
         video_layout = QVBoxLayout(video_group)
+        video_layout.setSpacing(5)
+        video_layout.setContentsMargins(8, 8, 8, 8)
         
         video_buttons_layout = QHBoxLayout()
-        self.btn_add_videos = QPushButton("Videos hinzufügen")
-        self.btn_remove_video = QPushButton("Video entfernen")
-        self.btn_clear_videos = QPushButton("Alle entfernen")
+        self.btn_add_videos = QPushButton("Hinzufügen")
+        self.btn_remove_video = QPushButton("Entfernen")
+        self.btn_clear_videos = QPushButton("Alle löschen")
+        
+        # Kompakte Button-Größen
+        for btn in [self.btn_add_videos, self.btn_remove_video, self.btn_clear_videos]:
+            btn.setMaximumHeight(25)
+        
         video_buttons_layout.addWidget(self.btn_add_videos)
         video_buttons_layout.addWidget(self.btn_remove_video)
         video_buttons_layout.addWidget(self.btn_clear_videos)
         video_layout.addLayout(video_buttons_layout)
         
         self.video_list = QListWidget()
+        self.video_list.setMaximumHeight(100)  # Begrenzte Höhe
         video_layout.addWidget(self.video_list)
         
         return video_group
     
     def _create_display_group(self):
-        """Erstellt die Display-Gruppe"""
+        """Erstellt die Display-Gruppe - kompakt"""
         display_group = QGroupBox("Darstellung")
         display_form = QFormLayout(display_group)
+        display_form.setSpacing(4)
+        display_form.setContentsMargins(8, 8, 8, 8)
         
         self.box_thickness = QSpinBox()
         self.box_thickness.setRange(1, 10)
         self.box_thickness.setValue(self.display_config.get('box_thickness', 2))
+        self.box_thickness.setMaximumHeight(22)
         display_form.addRow("Rahmendicke:", self.box_thickness)
         
         self.font_scale = QSpinBox()
         self.font_scale.setRange(1, 20)
         self.font_scale.setValue(self.display_config.get('font_scale', 5))
-        display_form.addRow("Textgrösse (x10):", self.font_scale)
+        self.font_scale.setMaximumHeight(22)
+        display_form.addRow("Textgröße (x10):", self.font_scale)
         
         self.text_thickness = QSpinBox()
         self.text_thickness.setRange(1, 5)
         self.text_thickness.setValue(self.display_config.get('text_thickness', 1))
+        self.text_thickness.setMaximumHeight(22)
         display_form.addRow("Textdicke:", self.text_thickness)
         
         self.alarm_class_dropdown = QComboBox()
+        self.alarm_class_dropdown.setMaximumHeight(22)
         display_form.addRow("Alarmklasse:", self.alarm_class_dropdown)
         
         return display_group
     
     def _create_pose_settings_group(self):
-        """Erstellt die Pose-Einstellungen Gruppe"""
+        """Erstellt die Pose-Einstellungen Gruppe - kompakt"""
         pose_settings_group = QGroupBox("Pose-Einstellungen")
         pose_form = QFormLayout(pose_settings_group)
+        pose_form.setSpacing(4)
+        pose_form.setContentsMargins(8, 8, 8, 8)
         
         self.pose_min_confidence = QDoubleSpinBox()
         self.pose_min_confidence.setRange(0.1, 1.0)
         self.pose_min_confidence.setSingleStep(0.05)
         self.pose_min_confidence.setValue(self.pose_config.get('min_confidence', 0.3))
+        self.pose_min_confidence.setMaximumHeight(22)
         pose_form.addRow("Min. Pose Konfidenz:", self.pose_min_confidence)
         
         self.pose_line_thickness = QSpinBox()
         self.pose_line_thickness.setRange(1, 10)
         self.pose_line_thickness.setValue(self.pose_config.get('line_thickness', 2))
+        self.pose_line_thickness.setMaximumHeight(22)
         pose_form.addRow("Skelett-Liniendicke:", self.pose_line_thickness)
         
         self.pose_keypoint_radius = QSpinBox()
         self.pose_keypoint_radius.setRange(1, 20)
         self.pose_keypoint_radius.setValue(self.pose_config.get('keypoint_radius', 3))
+        self.pose_keypoint_radius.setMaximumHeight(22)
         pose_form.addRow("Keypoint-Radius:", self.pose_keypoint_radius)
         
         self.pose_show_keypoints = QCheckBox()
@@ -198,18 +271,22 @@ class SettingsDialog(QDialog):
         return pose_settings_group
     
     def _create_foi_settings_group(self):
-        """Erstellt die FOI-Einstellungen Gruppe"""
+        """Erstellt die FOI-Einstellungen Gruppe - kompakt"""
         foi_settings_group = QGroupBox("Field of Interest (FOI) - Skilift Überwachung")
         foi_form = QFormLayout(foi_settings_group)
+        foi_form.setSpacing(4)
+        foi_form.setContentsMargins(8, 8, 8, 8)
         
         self.foi_enabled = QCheckBox()
         self.foi_enabled.setChecked(self.foi_config.get('enabled', True))
         foi_form.addRow("FOI aktiviert:", self.foi_enabled)
         
         self.foi_count_class_dropdown = QComboBox()
+        self.foi_count_class_dropdown.setMaximumHeight(22)
         foi_form.addRow("Zählklasse (FOI):", self.foi_count_class_dropdown)
         
         self.foi_alert_class_dropdown = QComboBox()
+        self.foi_alert_class_dropdown.setMaximumHeight(22)
         foi_form.addRow("Alert-Klasse (Lift):", self.foi_alert_class_dropdown)
         
         self.foi_alert_timeout = QDoubleSpinBox()
@@ -217,11 +294,13 @@ class SettingsDialog(QDialog):
         self.foi_alert_timeout.setSingleStep(1.0)
         self.foi_alert_timeout.setSuffix(" s")
         self.foi_alert_timeout.setValue(self.foi_config.get('alert_timeout', 10.0))
+        self.foi_alert_timeout.setMaximumHeight(22)
         foi_form.addRow("Alert Timeout:", self.foi_alert_timeout)
         
         self.foi_thickness = QSpinBox()
         self.foi_thickness.setRange(1, 10)
         self.foi_thickness.setValue(self.foi_config.get('foi_thickness', 3))
+        self.foi_thickness.setMaximumHeight(22)
         foi_form.addRow("FOI Rahmendicke:", self.foi_thickness)
         
         info_label = QLabel(
@@ -229,7 +308,7 @@ class SettingsDialog(QDialog):
             "Zählklasse wird im FOI gezählt, Alert-Klasse löst Lift-Verlangsamung aus."
         )
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666; font-style: italic; font-size: 11px;")
+        info_label.setStyleSheet("color: #666; font-style: italic; font-size: 10px;")
         foi_form.addRow(info_label)
         
         return foi_settings_group
@@ -238,9 +317,11 @@ class SettingsDialog(QDialog):
         """Erstellt das rechte Panel mit Klasseneinstellungen"""
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
+        right_layout.setSpacing(8)
         
         classes_group = QGroupBox("Detection Klasseneinstellungen")
         classes_layout = QVBoxLayout(classes_group)
+        classes_layout.setContentsMargins(8, 8, 8, 8)
         
         # Tabelle für Klasseneinstellungen (mit Pose Detection Checkbox)
         self.class_table = QTableWidget()
@@ -248,7 +329,14 @@ class SettingsDialog(QDialog):
         self.class_table.setHorizontalHeaderLabels([
             'Klassen-ID', 'Name', 'Farbe', 'Konfidenz', 'IoU', 'Pose Detection'
         ])
-        self.class_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        
+        # Responsive Tabellengröße
+        header = self.class_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        
+        # Kompaktere Zeilenhöhe
+        self.class_table.verticalHeader().setDefaultSectionSize(28)
+        
         classes_layout.addWidget(self.class_table)
         
         note_label = QLabel(
@@ -256,19 +344,25 @@ class SettingsDialog(QDialog):
             "Aktivieren Sie 'Pose Detection' für Klassen, bei denen Sturzerkennung durchgeführt werden soll."
         )
         note_label.setWordWrap(True)
-        note_label.setStyleSheet("color: #666; font-style: italic;")
+        note_label.setStyleSheet("color: #666; font-style: italic; font-size: 10px;")
         classes_layout.addWidget(note_label)
         
         right_layout.addWidget(classes_group)
         return right_widget
     
     def _create_button_layout(self):
-        """Erstellt das Button-Layout"""
+        """Erstellt das Button-Layout - kompakt"""
         button_layout = QHBoxLayout()
+        button_layout.setSpacing(8)
+        
         self.btn_save = QPushButton("Speichern")
         self.btn_cancel = QPushButton("Abbrechen")
         self.btn_load_config = QPushButton("Konfiguration laden")
         self.btn_save_config = QPushButton("Konfiguration speichern")
+        
+        # Kompakte Button-Höhe
+        for btn in [self.btn_save, self.btn_cancel, self.btn_load_config, self.btn_save_config]:
+            btn.setMaximumHeight(30)
         
         button_layout.addWidget(self.btn_load_config)
         button_layout.addWidget(self.btn_save_config)
@@ -375,6 +469,7 @@ class SettingsDialog(QDialog):
             
             # Farbe (Dropdown)
             color_combo = QComboBox()
+            color_combo.setMaximumHeight(22)
             for color_name in COLORS:
                 color_combo.addItem(color_name)
             
@@ -388,6 +483,7 @@ class SettingsDialog(QDialog):
             conf_spin.setRange(0.1, 1.0)
             conf_spin.setSingleStep(0.05)
             conf_spin.setValue(float(cfg.get('conf', 0.5)))
+            conf_spin.setMaximumHeight(22)
             self.class_table.setCellWidget(row, 3, conf_spin)
             
             # IoU
@@ -395,6 +491,7 @@ class SettingsDialog(QDialog):
             iou_spin.setRange(0.1, 1.0)
             iou_spin.setSingleStep(0.05)
             iou_spin.setValue(float(cfg.get('iou', 0.5)))
+            iou_spin.setMaximumHeight(22)
             self.class_table.setCellWidget(row, 4, iou_spin)
             
             # Pose Detection Checkbox

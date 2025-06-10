@@ -1,9 +1,9 @@
 {
-  "detection_model_path": "C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/Training 09.06.2025 mm/trained_on_whatsapp_vids_09.06.2025_mm.pt",
-  "pose_model_path": "C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/Training 09.06.2025 mm/yolo11n-pose.pt",
+  "detection_model_path": "C:/Users/miche/Documents/GitHub/Chairlift_Gefahrenerkennung/Training 09.06.2025 mm/trained_on_whatsapp_vids_09.06.2025_mm.pt",
+  "pose_model_path": "C:/Users/miche/Documents/GitHub/Chairlift_Gefahrenerkennung/Training 09.06.2025 mm/yolo11n-pose.pt",
   "class_config": {
     "0": {
-      "name": "frei",
+      "name": "class_0",
       "color": [
         0,
         255,
@@ -13,7 +13,7 @@
       "iou": 0.94
     },
     "1": {
-      "name": "benutzt",
+      "name": "class_1",
       "color": [
         255,
         0,
@@ -23,7 +23,7 @@
       "iou": 0.94
     },
     "2": {
-      "name": "HUMAN",
+      "name": "class_2",
       "color": [
         255,
         255,
@@ -33,7 +33,7 @@
       "iou": 0.94
     },
     "3": {
-      "name": "DANGER",
+      "name": "class_3",
       "color": [
         0,
         0,
@@ -57,7 +57,7 @@
   "display_config": {
     "box_thickness": 1,
     "font_scale": 4,
-    "text_thickness": 1,
+    "text_thickness": 2,
     "alarm_class": "3"
   },
   "foi_config": {
@@ -91,7 +91,7 @@
     "foi_thickness": 3
   },
   "video_files": [
-    "C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/5_Video/Umfallen_short.mp4",
-    "C:/Users/Michel/Documents/GitHub/Chairlift_Gefahrenerkennung/5_Video/Normal_short.mp4"
+    "C:/Users/miche/Documents/GitHub/Chairlift_Gefahrenerkennung/5_Video/Normal_short.mp4",
+    "C:/Users/miche/Documents/GitHub/Chairlift_Gefahrenerkennung/5_Video/Umfallen_short.mp4"
   ]
 }

@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
     QFrame, QProgressBar, QMessageBox, QStatusBar
 )
-from PyQt6.QtGui import QPixmap, QImage
+from PyQt6.QtGui import QPixmap, QImage, QFont
 from PyQt6.QtCore import QTimer, Qt, QThreadPool
 from ultralytics import YOLO
 
@@ -118,10 +118,8 @@ class VideoPlayer(QWidget):
         self.video_container = self._create_video_container()
         main_layout.addWidget(self.video_container, 1)
         
-        # Status bar für Lift-Status
-        self.status_bar = QStatusBar()
-        self.status_bar.showMessage("Lift Normalbetrieb")
-        self.status_bar.setStyleSheet("QStatusBar { background-color: #f0f0f0; border-top: 1px solid #ccc; }")
+        # Status bar für Lift-Status - VERGRÖSSERT
+        self.status_bar = self._create_large_status_bar()
         main_layout.addWidget(self.status_bar)
         
         # Progress bar
@@ -132,6 +130,40 @@ class VideoPlayer(QWidget):
         self.progress.setValue(0)
         self.progress.setVisible(False)
         main_layout.addWidget(self.progress)
+    
+    def _create_large_status_bar(self):
+        """Erstellt eine vergrößerte Status Bar mit zentriertem, dunklem Text"""
+        status_bar = QStatusBar()
+        
+        # Status Bar 3x größer machen (normale Höhe ist etwa 22px, also ~66px)
+        status_bar.setFixedHeight(66)
+        
+        # Standard-Nachricht setzen
+        status_bar.showMessage("Lift Normalbetrieb")
+        
+        # Styling für größere, zentrierte, dunkle Schrift auf hellem Hintergrund
+        status_bar.setStyleSheet("""
+            QStatusBar {
+                background-color: #f8f9fa;
+                border-top: 2px solid #dee2e6;
+                color: #212529;
+                font-size: 18px;
+                font-weight: bold;
+                text-align: center;
+                padding: 0px;
+            }
+            QStatusBar::item {
+                border: none;
+            }
+        """)
+        
+        # Font explizit setzen für bessere Kontrolle
+        font = QFont()
+        font.setPointSize(18)
+        font.setBold(True)
+        status_bar.setFont(font)
+        
+        return status_bar
     
     def _create_toolbar(self):
         """Erstellt die Toolbar"""
@@ -364,19 +396,63 @@ class VideoPlayer(QWidget):
             self.foi_manager.count_objects_in_foi(detections)
             self.foi_manager.check_alert_objects_in_foi(detections)
             
-            # Status-Bar aktualisieren
+            # Status-Bar aktualisieren mit verbessertem Styling
             lift_status = self.foi_manager.get_lift_status()
             self.status_bar.showMessage(lift_status)
             
-            # Status-Bar-Farbe je nach Status ändern
+            # Status-Bar-Farbe je nach Status ändern - mit dunklem Text
             if "verlangsamt" in lift_status:
-                self.status_bar.setStyleSheet("QStatusBar { background-color: #fff3cd; border-top: 1px solid #ccc; color: #856404; }")
+                self.status_bar.setStyleSheet("""
+                    QStatusBar {
+                        background-color: #fff3cd;
+                        border-top: 2px solid #ffeaa7;
+                        color: #856404;
+                        font-size: 18px;
+                        font-weight: bold;
+                        text-align: center;
+                        padding: 0px;
+                    }
+                    QStatusBar::item { border: none; }
+                """)
             elif "gestoppt" in lift_status:
-                self.status_bar.setStyleSheet("QStatusBar { background-color: #f8d7da; border-top: 1px solid #ccc; color: #721c24; }")
+                self.status_bar.setStyleSheet("""
+                    QStatusBar {
+                        background-color: #f8d7da;
+                        border-top: 2px solid #f5c6cb;
+                        color: #721c24;
+                        font-size: 18px;
+                        font-weight: bold;
+                        text-align: center;
+                        padding: 0px;
+                    }
+                    QStatusBar::item { border: none; }
+                """)
             elif "Normalgeschwindigkeit" in lift_status:
-                self.status_bar.setStyleSheet("QStatusBar { background-color: #d1edff; border-top: 1px solid #ccc; color: #004085; }")
+                self.status_bar.setStyleSheet("""
+                    QStatusBar {
+                        background-color: #d1edff;
+                        border-top: 2px solid #bee5eb;
+                        color: #004085;
+                        font-size: 18px;
+                        font-weight: bold;
+                        text-align: center;
+                        padding: 0px;
+                    }
+                    QStatusBar::item { border: none; }
+                """)
             else:
-                self.status_bar.setStyleSheet("QStatusBar { background-color: #d4edda; border-top: 1px solid #ccc; color: #155724; }")
+                self.status_bar.setStyleSheet("""
+                    QStatusBar {
+                        background-color: #d4edda;
+                        border-top: 2px solid #c3e6cb;
+                        color: #155724;
+                        font-size: 18px;
+                        font-weight: bold;
+                        text-align: center;
+                        padding: 0px;
+                    }
+                    QStatusBar::item { border: none; }
+                """)
         
         # Prüfung auf Standard-Alarmzustand
         alarm_class_id = self.display_config.get('alarm_class')
