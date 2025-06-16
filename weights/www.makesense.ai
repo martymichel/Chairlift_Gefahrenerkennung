@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-155837750-1"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-155837750-1');
+    </script>
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+              new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+            j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+            'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-5N6WR7G');</script>
+
+    <meta charset="utf-8" />
+
+    <link rel="shortcut icon" href="/make-sense-ico.png" />
+    <link href="https://fonts.googleapis.com/css?family=Saira+Semi+Condensed&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    
+    <meta name="theme-color" content="#171717" />
+    <!--
+      manifest.json provides metadata used when your web app is installed on a
+      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
+    -->
+    <link rel="manifest" href="/manifest.json" />
+    <title>Make Sense</title>
+    <script type="module" crossorigin src="/assets/index.08c20588.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/lodash.e59e1c8d.js">
+    <link rel="modulepreload" crossorigin href="/assets/runtime.830e958a.js">
+    <link rel="modulepreload" crossorigin href="/assets/runtime-dom.01dc44f2.js">
+    <link rel="modulepreload" crossorigin href="/assets/ui.6052a7a6.js">
+    <link rel="modulepreload" crossorigin href="/assets/classnames.d8e93af2.js">
+    <link rel="modulepreload" crossorigin href="/assets/ai.f9c28151.js">
+    <link rel="modulepreload" crossorigin href="/assets/models.3c950603.js">
+    <link rel="modulepreload" crossorigin href="/assets/moment.9709ab41.js">
+    <link rel="stylesheet" href="/assets/index.c1e5df6b.css">
+  </head>
+  <body>
+    <style>
+      body {
+        background-color: #171717;
+      }
+    </style>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <noscript>
+      <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-5N6WR7G" height="0" width="0" style="display:none;visibility:hidden"></iframe>
+    </noscript>
+    <div id="root"></div>
+    
+  </body>
+</html>
