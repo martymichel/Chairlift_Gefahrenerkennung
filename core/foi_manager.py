@@ -236,7 +236,7 @@ class FOIManager:
         return frame
     
     def draw_count_display(self, frame):
-        """Zeichnet die Objektzählung und Timer-Info oberhalb des FOI - ERWEITERT"""
+        """Zeichnet die Objektzählung und Timer-Info oberhalb des FOI - KORRIGIERT"""
         if not self.foi_config.get('enabled', False):
             return frame
             
@@ -260,21 +260,25 @@ class FOIManager:
             count_text = f"Personen im FOI: {self.current_count}"
             self._draw_text_with_background(frame, count_text, text_x, base_y, font, font_scale, thickness, (255, 255, 255), (0, 0, 0))
             
-        # Timer-Info hinzufügen wenn Alert aktiv
-        if self.alert_active and self.alert_start_time:
+        # Timer-Info nur anzeigen wenn Alert AKTIV ist und nicht im Normalbetrieb
+        if self.alert_active and self.alert_start_time and "Normalbetrieb" not in self.lift_status:
             remaining = self.get_remaining_timeout_seconds()
             if remaining is not None and remaining > 0:
+                # Countdown-Timer anzeigen
                 timer_text = f"Lift-Stopp in: {remaining:.1f}s"
                 timer_y = base_y + 35 if count_class else base_y
                 timer_color = (0, 255, 255) if remaining > 5 else (0, 0, 255)  # Gelb oder Rot
                 self._draw_text_with_background(frame, timer_text, text_x, timer_y, font, font_scale - 0.1, thickness, timer_color, (0, 0, 0))
             elif "gestoppt" in self.lift_status:
+                # Nur bei gestopptem Lift anzeigen
                 timer_text = "Lift gestoppt - Manueller Reset erforderlich"
                 timer_y = base_y + 35 if count_class else base_y
                 self._draw_text_with_background(frame, timer_text, text_x, timer_y, font, font_scale - 0.1, thickness, (0, 0, 255), (0, 0, 0))
         
+        # WICHTIG: Kein Timer-Text wenn Alert nicht aktiv oder Lift im Normalbetrieb
+        
         return frame
-    
+        
     def _draw_text_with_background(self, frame, text, center_x, y, font, font_scale, thickness, text_color, bg_color):
         """Hilfsmethode: Zeichnet Text mit Hintergrund"""
         # Textgröße ermitteln
@@ -291,7 +295,7 @@ class FOIManager:
         
         # Text zeichnen
         cv2.putText(frame, text, (center_x - text_width // 2, y), 
-                   font, font_scale, text_color, thickness)
+                font, font_scale, text_color, thickness)
     
     def get_lift_status(self):
         """Gibt den aktuellen Lift-Status zurück"""
