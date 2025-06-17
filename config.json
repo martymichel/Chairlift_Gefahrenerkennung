@@ -3,44 +3,44 @@
   "pose_model_path": "C:/Users/miche/Documents/GitHub/Chairlift_Gefahrenerkennung/Training 09.06.2025 mm/yolo11n-pose.pt",
   "class_config": {
     "0": {
-      "name": "class_0",
+      "name": "leer",
       "color": [
         0,
         255,
         0
       ],
-      "conf": 0.5,
-      "iou": 0.94
+      "conf": 0.3,
+      "iou": 0.5
     },
     "1": {
-      "name": "class_1",
+      "name": "besetzt",
       "color": [
         255,
         0,
         0
       ],
-      "conf": 0.5,
-      "iou": 0.94
+      "conf": 0.3,
+      "iou": 0.6
     },
     "2": {
-      "name": "class_2",
+      "name": "HUMAN",
       "color": [
         255,
         255,
         0
       ],
-      "conf": 0.5,
-      "iou": 0.94
+      "conf": 0.3,
+      "iou": 0.6
     },
     "3": {
-      "name": "class_3",
+      "name": "DANGER",
       "color": [
         0,
         0,
         255
       ],
-      "conf": 0.55,
-      "iou": 0.94
+      "conf": 0.6,
+      "iou": 0.6
     }
   },
   "pose_config": {
@@ -56,7 +56,7 @@
   },
   "display_config": {
     "box_thickness": 1,
-    "font_scale": 2,
+    "font_scale": 3,
     "text_thickness": 1,
     "alarm_class": "3"
   },
@@ -64,12 +64,12 @@
     "enabled": true,
     "points": [
       [
-        0.30306603773584906,
-        0.03556485355648536
+        0.3113207547169811,
+        0.26359832635983266
       ],
       [
-        0.6591981132075472,
-        0.03556485355648536
+        0.6662735849056604,
+        0.26359832635983266
       ],
       [
         0.6639150943396226,
@@ -82,7 +82,7 @@
     ],
     "count_class": "2",
     "alert_class": "3",
-    "alert_timeout": 17.0,
+    "alert_timeout": 20.0,
     "foi_color": [
       0,
       255,
